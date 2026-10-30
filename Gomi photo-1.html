@@ -1,0 +1,1926 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<!-- 外部通信を禁止(connect-src 'none')。画像は blob: / data: のみ許可。外部ファイル・外部フォントは読み込まない -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src blob: data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gomi photo</title>
+<style>
+  /* ===== Material Design(色・形・影のルール)+ ミニマリズム(余白を広く、線と装飾を最小限に) ===== */
+  :root {
+    --primary:#0b57d0; --on-primary:#fff; --pc:#d3e3fd; --on-pc:#041e49;
+    --bg:#f3f5f9; --surface:#fff; --surface-2:#f0f3f8;
+    --text:#1b1f27; --sub:#5b6370; --outline:#c4c9d4; --soft:#e4e7ee;
+    --ok:#146c2e; --ok-c:#dcf2e2; --warn:#7a4f00; --warn-c:#fff0cf; --err:#b3261e; --err-c:#fce8e6;
+    --small:#9a4f00; --small-c:#ffe2b8;
+    --tmp:#6b46c1; --tmp-c:#ece4fa; --tmp-line:#c9b8ea;   /* 一時タブ(ドロップしたフォルダ)の色 */
+    --e1:0 1px 2px rgba(16,24,40,.10), 0 1px 3px 1px rgba(16,24,40,.06);
+    --e2:0 2px 6px 2px rgba(16,24,40,.12), 0 1px 2px rgba(16,24,40,.12);
+    --e3:0 4px 8px 3px rgba(16,24,40,.14), 0 1px 3px rgba(16,24,40,.14);
+  }
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  body { margin:0; background:var(--bg); color:var(--text); font-size:15px; line-height:1.55;
+         font-family:"Yu Gothic UI","Meiryo UI","Meiryo","Hiragino Sans",system-ui,sans-serif; }
+  .ic { width:20px; height:20px; fill:currentColor; flex:none; }
+  /* スクロールバーは細く、あふれたときだけ出す */
+  .scrollarea, .sb, textarea { scrollbar-width:thin; scrollbar-color:#b4bcc9 transparent; }
+  .scrollarea::-webkit-scrollbar, .sb::-webkit-scrollbar, textarea::-webkit-scrollbar { width:8px; height:8px; }
+  .scrollarea::-webkit-scrollbar-thumb, .sb::-webkit-scrollbar-thumb, textarea::-webkit-scrollbar-thumb { background:#b4bcc9; border-radius:4px; }
+  .scrollarea::-webkit-scrollbar-track, .sb::-webkit-scrollbar-track, textarea::-webkit-scrollbar-track { background:transparent; }
+
+  header.appbar { display:flex; align-items:center; gap:12px; height:48px; padding:0 20px; background:var(--surface); box-shadow:var(--e1); position:relative; z-index:2; }
+  header.appbar .logo { width:26px; height:26px; color:var(--primary); }
+  header.appbar h1 { margin:0; font-size:1.2rem; font-weight:600; letter-spacing:.02em; }
+
+  /* ===== 3列:左(① フォルダ・② メール本文)/ 中央(③ 写真を確認)/ 右(④ コピーリスト) ===== */
+  main { padding:12px 16px 16px; }
+  .layout3 { display:grid; grid-template-columns:1fr; gap:12px; }
+  .leftcol { display:flex; flex-direction:column; gap:12px; min-height:0; }
+  @media (min-width:981px) {
+    html, body { height:100%; }
+    body { display:flex; flex-direction:column; overflow:hidden; }
+    header.appbar { flex:none; }
+    main { flex:1 1 auto; min-height:0; width:100%; }
+    .layout3 { height:100%; grid-template-columns:260px minmax(0,1fr) 290px; }
+    .layout3 > * { min-height:0; }
+    .view:not([hidden]) { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; }
+    .scrollarea { flex:1 1 auto; min-height:0; overflow-y:auto; padding:2px 6px 8px 2px; }
+    textarea#mailBody { flex:1 1 auto; height:auto; min-height:56px; resize:none; }
+    #chips { flex:0 1 auto; min-height:36px; max-height:98px; overflow-y:auto; }
+    .leftcol { overflow-y:auto; scrollbar-width:thin; padding:2px 4px 2px 2px; margin:-2px -4px -2px -2px; }
+    .leftcol > section.panel:last-child { flex:1 1 auto; }
+    .leftcol > section.panel:first-child { flex:none; }
+    .listbox { flex:1 1 auto; min-height:0; overflow-y:auto; }
+  }
+  @media (min-width:1280px) { .layout3 { grid-template-columns:300px minmax(0,1fr) 330px; } }
+
+  section.panel { background:var(--surface); border-radius:16px; box-shadow:var(--e1); padding:14px 18px; display:flex; flex-direction:column; min-height:0; }
+  section.panel h2 { display:flex; align-items:center; gap:10px; margin:0 0 10px; font-size:1rem; font-weight:600; white-space:nowrap; }
+  section.panel h2 .no { display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:50%;
+                         background:var(--pc); color:var(--on-pc); font-size:.85rem; font-weight:700; }
+  section.panel h2 .hcount { margin-left:auto; font-size:.8rem; font-weight:400; color:var(--sub); }
+  .glabel.gl-row { display:flex; align-items:center; gap:8px; }
+  .glabel.gl-row .hcnt { font-weight:400; }
+  .glabel.gl-row button { margin-left:auto; }
+  button.xs .ic { width:16px; height:16px; }
+  .glabel { margin:8px 0 4px; font-size:.78rem; font-weight:600; color:var(--sub); letter-spacing:.04em; }
+  .muted { color:var(--sub); font-size:.85rem; }
+  .row { display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; }
+
+  /* ボタン(既定:枠線 / .primary:塗りつぶし / .tonal:淡い塗り / .text:文字だけ / .icon:丸いアイコン) */
+  button { font:inherit; font-weight:500; display:inline-flex; align-items:center; justify-content:center; gap:8px; cursor:pointer;
+           height:36px; padding:0 16px; border-radius:18px; border:1px solid var(--outline); background:transparent; color:var(--primary);
+           transition:background-color .15s, box-shadow .15s; white-space:nowrap; }
+  button:hover:not(:disabled) { background:rgba(11,87,208,.08); }
+  button:active:not(:disabled) { background:rgba(11,87,208,.14); }
+  button.primary { background:var(--primary); border-color:var(--primary); color:var(--on-primary); }
+  button.primary:hover:not(:disabled) { background:#0a4db8; box-shadow:var(--e1); }
+  button.tonal { background:var(--pc); border-color:transparent; color:var(--on-pc); }
+  button.text { border-color:transparent; padding:0 10px; }
+  button.big { height:46px; padding:0 24px; border-radius:23px; font-size:1rem; }
+  button.icon { width:34px; padding:0; border-color:transparent; color:var(--sub); border-radius:50%; }
+  button:disabled { opacity:.38; cursor:not-allowed; }
+  button:focus-visible, input:focus-visible, textarea:focus-visible { outline:2px solid var(--primary); outline-offset:2px; }
+  button.xs { height:26px; padding:0 10px; font-size:.8rem; }
+  button.icon.xs { width:26px; padding:0; }
+  button.icon.xs .ic { width:16px; height:16px; }
+
+  .notice { margin:10px 0 0; padding:9px 14px; border-radius:12px; font-size:.9rem; }
+  .notice:empty { display:none; }
+  .notice.info { background:var(--pc); color:var(--on-pc); }
+  .notice.ok { background:var(--ok-c); color:var(--ok); }
+  .notice.warn { background:var(--warn-c); color:var(--warn); }
+  .notice.error { background:var(--err-c); color:var(--err); }
+
+  /* ① フォルダ */
+  .frows { display:flex; flex-direction:column; gap:5px; }
+  .fchip { display:flex; align-items:center; gap:8px; min-height:40px; padding:3px 6px 3px 12px; border:1px solid var(--outline); border-radius:20px; background:var(--surface); min-width:0; }
+  .fchip > .ic { color:var(--sub); width:18px; height:18px; }
+  .fchip .fcol { display:flex; flex-direction:column; min-width:0; flex:1; line-height:1.25; }
+  .fchip .fn { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; }
+  .fchip .fi { font-size:.72rem; color:var(--sub); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; flex:none; background:var(--outline); }
+  .dot.ok { background:#2e9d4f; } .dot.warn { background:#e0a000; } .dot.err { background:#c4524a; }
+  .dropHint { margin-top:8px; font-size:.74rem; color:var(--sub); display:flex; gap:6px; align-items:flex-start; line-height:1.5; }
+  .dropHint .ic { width:16px; height:16px; margin-top:2px; color:var(--tmp); }
+
+  /* ② メール本文 */
+  textarea#mailBody { width:100%; height:180px; resize:vertical; padding:12px 14px; border:1px solid var(--outline); border-radius:12px;
+                      background:var(--surface); color:var(--text); font:inherit; }
+  textarea#mailBody:focus { border-color:var(--primary); outline:2px solid var(--primary); outline-offset:-1px; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; align-content:flex-start; padding-right:4px; }
+  .chip { display:inline-flex; align-items:center; height:30px; padding:0 4px 0 11px; border:1px solid var(--outline); border-radius:8px; font-weight:500; background:var(--surface); font-size:.9rem; }
+  .chip.prefix { background:#ece6f7; border-color:#cdbfe8; }
+  .chip button.icon { width:22px; height:22px; margin-left:2px; }
+  .chip button.icon .ic { width:15px; height:15px; }
+  .badge { display:inline-block; font-size:.76rem; font-weight:600; padding:0 9px; border-radius:10px; white-space:nowrap; }
+  .badge.ok { background:var(--ok-c); color:var(--ok); } .badge.warn { background:var(--warn-c); color:var(--warn); } .badge.err { background:var(--err-c); color:var(--err); }
+  .badge.small { background:var(--small-c); color:var(--small); font-weight:700; margin-left:6px; }
+
+  /* ③ タブ(検索結果 / フォルダ内の写真 / 一時タブ) */
+  .tabs { position:relative; display:flex; gap:2px; align-items:flex-end; margin:-2px 0 10px; border-bottom:1px solid var(--soft); overflow-x:auto; overflow-y:hidden; flex:none; scrollbar-width:thin; }
+  .tabs::-webkit-scrollbar { height:6px; } .tabs::-webkit-scrollbar-thumb { background:#b4bcc9; border-radius:3px; }
+  button.tab { height:42px; border:none; border-radius:0; border-bottom:3px solid transparent; padding:0 18px; color:var(--sub); font-weight:600; flex:none; }
+  button.tab:hover:not(:disabled) { background:rgba(11,87,208,.06); }
+  button.tab.active { color:var(--primary); border-bottom-color:var(--primary); }
+  .tab.temp { display:inline-flex; align-items:center; flex:none; height:42px; margin-left:8px; padding:0 2px 0 2px; border:1.5px dashed var(--tmp-line); border-bottom:3px solid transparent;
+              border-radius:10px 10px 0 0; background:#f8f5fd; color:var(--tmp); font-weight:600; }
+  .tab.temp.active { background:var(--tmp-c); border-style:solid; border-bottom:3px solid var(--tmp); }
+  .tab.temp .tlabel { display:inline-flex; align-items:center; gap:6px; height:100%; padding:0 6px 0 10px; border:none; border-radius:8px 0 0 0; background:transparent; color:inherit; font-weight:600; max-width:150px; }
+  .tab.temp .tlabel:hover { background:rgba(107,70,193,.08); }
+  .tab.temp .tlabel .ic { width:18px; height:18px; }
+  .tab.temp .tn { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tab.temp .tbadge { font-size:.68rem; padding:0 7px; border-radius:9px; background:var(--tmp); color:#fff; font-weight:700; line-height:1.5; }
+  .tab.temp .tclose { width:26px; height:26px; padding:0; border:none; border-radius:50%; color:var(--tmp); }
+  .tab.temp .tclose:hover { background:rgba(107,70,193,.14); }
+  .tab.temp .tclose .ic { width:16px; height:16px; }
+  #panelCenter.tempmode { outline:2px dashed var(--tmp-line); outline-offset:-5px; }
+  .tempbanner { display:flex; align-items:center; gap:10px; margin-bottom:10px; padding:8px 14px; border-radius:12px; background:var(--tmp-c); color:#3b2477; font-size:.86rem; line-height:1.45; }
+  .tempbanner .tbadge { font-size:.7rem; padding:0 8px; border-radius:9px; background:var(--tmp); color:#fff; font-weight:700; flex:none; }
+  .tempmode button.foldercard { background:var(--tmp-c); color:#3b2477; }
+  .tempmode button.foldercard:hover:not(:disabled) { background:#ddd0f6; }
+  .tempmode .crumbs button.crumb { color:var(--tmp); }
+  .tempmode .browsebar button.text { color:var(--tmp); }
+
+  .browsebar { gap:8px 14px; }
+  .browsebar input[type=text] { height:38px; width:230px; max-width:100%; padding:0 16px; border:1px solid var(--outline); border-radius:19px; font:inherit; background:var(--surface); }
+  input[type=checkbox] { accent-color:var(--primary); }
+  .crumbs { margin-top:6px; }
+  .crumbs:empty { display:none; }
+  button.crumb { height:28px; padding:0 8px; border:none; border-radius:8px; font-weight:500; }
+
+  /* 写真カード */
+  .cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:12px; margin-top:12px; }
+  .cards.small { grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; }
+  .card { border:1px solid var(--soft); border-radius:12px; padding:8px; background:var(--surface); }
+  .card.is-small { background:#fff8ec; border-color:#f0cf9c; }
+  .card-head { display:flex; justify-content:space-between; align-items:center; gap:6px; margin-bottom:5px; }
+  .code { font-size:.98rem; font-weight:600; word-break:break-all; }
+  .thumb { height:115px; background:var(--surface-2); border-radius:8px; display:flex; align-items:center; justify-content:center; cursor:zoom-in; overflow:hidden; }
+  .cards.small .thumb { height:96px; }
+  .thumb canvas { width:100%; height:100%; object-fit:contain; display:block; }
+  .thumb-status { font-size:.8rem; color:var(--sub); }
+  .thumb-status.err { color:var(--err); font-weight:600; }
+  .fnm { font-size:.82rem; word-break:break-all; margin-top:5px; }
+  .fsize { font-size:.78rem; color:var(--sub); }
+  .fsize.big { color:var(--ok); font-weight:600; }
+  .fsize.small { color:var(--small); font-weight:700; }
+  .frel { font-size:.74rem; color:var(--sub); word-break:break-all; }
+  label.sel { display:inline-flex; gap:8px; align-items:center; cursor:pointer; margin-top:3px; font-size:.88rem; }
+  label.sel input { width:18px; height:18px; }
+  .group { margin-top:18px; padding-top:10px; border-top:1px solid var(--soft); }
+  .group-head { display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; }
+  .group-head strong { font-size:1rem; }
+  ul.missing { margin:6px 0 10px; padding-left:22px; }
+  ul.missing li { font-weight:600; }
+  button.foldercard { flex-direction:column; gap:3px; height:auto; min-height:96px; padding:10px 8px; border:none; border-radius:12px; background:var(--pc); color:var(--on-pc); text-align:center; }
+  button.foldercard:hover:not(:disabled) { background:#c4d8fa; }
+  button.foldercard .ic { width:30px; height:30px; }
+  .fname2 { font-weight:600; word-break:break-all; }
+  button.foldercard .muted { color:inherit; opacity:.75; font-size:.78rem; }
+
+  /* ④ コピーリスト */
+  .csum { display:flex; justify-content:space-between; align-items:baseline; gap:8px; margin-bottom:6px; }
+  .csum b { font-size:1.1rem; }
+  .listbox { display:flex; flex-direction:column; gap:6px; padding-right:4px; margin-bottom:8px; min-height:80px; max-height:50vh; overflow-y:auto; }
+  .lrow { display:flex; align-items:center; gap:10px; padding:6px 4px 6px 6px; border-radius:10px; background:var(--surface-2); flex:none; }
+  .lrow.is-small { background:#fff8ec; }
+  .lthumb { width:54px; height:40px; border-radius:6px; background:#e3e7ee; overflow:hidden; flex:none; display:flex; align-items:center; justify-content:center; cursor:zoom-in; }
+  .lthumb canvas { width:100%; height:100%; object-fit:cover; display:block; }
+  .lthumb .thumb-status { font-size:.6rem; }
+  .lmid { flex:1; min-width:0; line-height:1.3; }
+  .lcode { font-weight:600; font-size:.92rem; display:flex; align-items:center; gap:6px; }
+  .lmeta { font-size:.74rem; color:var(--sub); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .lmeta.small { color:var(--small); font-weight:700; }
+  .ltag { font-size:.62rem; padding:0 6px; border-radius:8px; background:var(--tmp); color:#fff; font-weight:700; }
+  .lempty { padding:14px 6px; line-height:1.6; }
+  .selinfo:empty { display:none; }
+  .selinfo { margin-bottom:6px; }
+  .copynote { margin-top:8px; font-size:.74rem; color:var(--sub); line-height:1.5; }
+  section.copypanel { border:2px solid var(--primary); box-shadow:var(--e2); }
+  #copyMsg { max-height:130px; overflow-y:auto; }
+
+  /* ドロップ中の案内 */
+  #dropOverlay { position:fixed; inset:0; z-index:45; background:rgba(107,70,193,.14); display:flex; align-items:center; justify-content:center; pointer-events:none; }
+  .dropcard { background:#fff; border:3px dashed var(--tmp); border-radius:28px; padding:38px 56px; text-align:center; box-shadow:var(--e3); color:var(--tmp); }
+  .dropcard .ic { width:56px; height:56px; }
+  .dropcard .dt { font-size:1.35rem; font-weight:700; margin-top:6px; }
+  .dropcard .dd { margin-top:6px; font-size:.9rem; color:var(--sub); }
+
+  /* 拡大表示(ダイアログ) */
+  #modal { position:fixed; inset:0; background:rgba(16,20,28,.62); display:flex; align-items:center; justify-content:center; z-index:50; padding:20px; }
+  .modal-box { background:var(--surface); border-radius:24px; box-shadow:var(--e3); width:min(1200px,94vw); max-height:96vh; display:flex; flex-direction:column; overflow:hidden; }
+  .modal-head { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 12px 10px 24px; }
+  .modal-head strong { font-weight:600; word-break:break-all; }
+  .mact { display:flex; align-items:center; gap:2px; flex:none; }
+  #modalBody { background:#171a20; display:flex; justify-content:center; align-items:center; height:min(74vh,880px); overflow:hidden; }
+  #modalBody img { max-width:100%; max-height:100%; object-fit:contain; display:block; }
+  .modal-msg { padding:30px; color:#c7ccd6; }
+  .modal-msg.err { color:#ffb4ab; font-weight:600; }
+  .modal-hint { padding:8px 24px 12px; font-size:.8rem; color:var(--sub); }
+  #toast { position:fixed; left:50%; bottom:28px; transform:translateX(-50%); background:#2f3135; color:#f1f3f7; padding:12px 22px; border-radius:8px; box-shadow:var(--e3); z-index:60; max-width:90vw; }
+  #toast.err { background:#8c1d18; }
+  /* 画面の高さが低いときは、フォルダの2行目(枚数・容量)とヒントを省いて、縦を節約する(枚数・容量は、マウスを重ねると見える) */
+  @media (min-width:981px) and (max-height:760px) { .fchip .fi { display:none; } .fchip { min-height:32px; } .dropHint { display:none; } .frows { gap:4px; } }
+</style>
+</head>
+<body>
+
+<!-- アイコン(Material Iconsと同じ形をSVGで内蔵。外部のフォントは使わない) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-photo" viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></symbol>
+    <symbol id="i-add" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></symbol>
+    <symbol id="i-left" viewBox="0 0 24 24"><path d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></symbol>
+    <symbol id="i-right" viewBox="0 0 24 24"><path d="M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></symbol>
+    <symbol id="i-delete" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></symbol>
+    <symbol id="i-drop" viewBox="0 0 24 24"><path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-2 8h-3v3h-2v-3h-3v-2h3V9h2v3h3v2z"/></symbol>
+  </defs>
+</svg>
+
+<header class="appbar">
+  <svg class="ic logo"><use href="#i-photo"/></svg>
+  <h1>Gomi photo</h1>
+</header>
+<main>
+<div class="layout3">
+
+  <!-- ===== 左:① フォルダ ② メール本文 ===== -->
+  <div class="leftcol">
+
+    <section class="panel">
+      <h2><span class="no">1</span>フォルダ</h2>
+      <div class="glabel gl-row" style="margin-top:0"><span>写真フォルダ(最大5つ)</span><span class="hcnt" id="photoCount"></span><button id="photoAdd" type="button" class="tonal xs"><svg class="ic"><use href="#i-add"/></svg><span id="photoAddLabel">選ぶ</span></button></div>
+      <div class="frows" id="photoRows"></div>
+      <div class="glabel">コピー先</div>
+      <div class="row" style="flex-wrap:nowrap">
+        <span class="fchip" style="flex:1;min-height:36px">
+          <svg class="ic"><use href="#i-folder"/></svg>
+          <span class="fcol"><span class="fn" id="outName">未設定</span></span>
+          <span class="dot err" id="outBadge" role="img" aria-label="未設定" title="未設定"></span>
+          <button class="primary xs" id="outGrant" type="button" hidden>許可する</button>
+        </span>
+        <button id="outPick" type="button" class="tonal">選ぶ</button>
+      </div>
+      <div class="dropHint"><svg class="ic"><use href="#i-drop"/></svg><span>フォルダを画面にドロップすると、「一時」タブで閲覧できます。</span></div>
+      <div class="notice" id="folderMsg"></div>
+    </section>
+
+    <section class="panel">
+      <h2><span class="no">2</span>メール本文</h2>
+      <textarea id="mailBody" placeholder="申請メールの本文を貼り付けると、自動で検索します。&#10;「CYC」のように英字3文字だけを書くと、その英字の写真をすべて表示します。"></textarea>
+      <div class="row" style="margin-top:8px; justify-content:space-between;">
+        <strong id="extractCount">抽出:0件</strong>
+        <button id="btnClear" type="button" class="text">クリア(次の依頼へ)</button>
+      </div>
+      <div class="chips sb" id="chips"></div>
+      <div class="notice" id="mailMsg"></div>
+    </section>
+
+  </div>
+
+  <!-- ===== 中央:③ 写真を確認 ===== -->
+  <section class="panel" id="panelCenter">
+    <h2><span class="no">3</span>写真を確認</h2>
+    <div class="tabs" role="tablist" id="tabs">
+      <button type="button" class="tab active" id="tabResults" role="tab">検索結果</button>
+      <button type="button" class="tab" id="tabBrowse" role="tab">フォルダ内の写真</button>
+      <span id="tempTabs" style="display:contents"></span>
+    </div>
+
+    <!-- 検索結果 -->
+    <div class="view" id="viewResults">
+      <div class="scrollarea" id="resultScroll">
+        <div class="notice" id="searchMsg" style="margin-top:0;"></div>
+        <div id="resultHead" style="margin-top:10px;font-weight:600;"></div>
+        <div class="cards" id="cards"></div>
+        <div id="groups"></div>
+        <div id="missingBox"></div>
+      </div>
+    </div>
+
+    <!-- フォルダ内の写真(登録した写真フォルダ / 一時タブのフォルダ) -->
+    <div class="view" id="viewBrowse" hidden>
+      <div class="tempbanner" id="tempBanner" hidden><span class="tbadge">一時</span><span>ドロップして一時的に読み込んだフォルダです。検索の対象にはならず、アプリを閉じると消えます。写真は「コピーに追加」でコピーリストに入れられます。</span></div>
+      <div class="row browsebar">
+        <input type="text" id="browseQ" placeholder="番号・ファイル名で絞り込み" aria-label="絞り込み">
+        <label class="sel"><input type="checkbox" id="browseSmall">1MB未満だけ</label>
+        <button id="browseReload" type="button" class="text">再読み込み</button>
+        <button id="btnCsv" type="button" title="フォルダ内の全写真の一覧をCSVで保存します"><svg class="ic"><use href="#i-download"/></svg>CSV出力</button>
+        <span class="muted" id="browseInfo"></span>
+      </div>
+      <div class="crumbs" id="browsePath"></div>
+      <div class="scrollarea" id="browseScroll">
+        <div class="notice" id="csvMsg" style="margin-top:0;"></div>
+        <div class="notice" id="browseMsg"></div>
+        <div class="cards small" id="browseCards"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 右:④ コピーリスト ===== -->
+  <section class="panel copypanel">
+    <h2><span class="no">4</span>コピーリスト</h2>
+    <div class="csum"><b id="copyCount">0件</b><span class="muted" id="copyTotal"></span></div>
+    <div class="listbox sb" id="copyListBox"></div>
+    <div class="muted selinfo" id="selInfo"></div>
+    <button id="btnClearExtra" type="button" class="text" hidden style="align-self:flex-start;margin-bottom:6px">閲覧で追加した写真をクリア</button>
+    <button class="primary big" id="btnCopy" type="button" style="width:100%"><svg class="ic"><use href="#i-copy"/></svg><span id="btnCopyLabel">フォルダへコピー</span></button>
+    <div class="copynote">コピー成功時、コピー先の古いコピーフォルダは最新の2つを残して自動で整理します。</div>
+    <div class="notice" id="copyMsg"></div>
+  </section>
+
+</div>
+</main>
+
+<div id="dropOverlay" hidden>
+  <div class="dropcard">
+    <svg class="ic"><use href="#i-drop"/></svg>
+    <div class="dt">ここにフォルダをドロップ</div>
+    <div class="dd">一時タブで閲覧できます(検索の対象にはならず、アプリを閉じると消えます)</div>
+  </div>
+</div>
+
+<div id="modal" hidden role="dialog" aria-modal="true" aria-label="画像プレビュー">
+  <div class="modal-box">
+    <div class="modal-head">
+      <strong id="modalTitle"></strong>
+      <div class="mact">
+        <button id="btnPrev" type="button" class="icon" title="前の写真(←キー)" aria-label="前の写真"><svg class="ic"><use href="#i-left"/></svg></button>
+        <span class="muted" id="modalPos"></span>
+        <button id="btnNext" type="button" class="icon" title="次の写真(→キー)" aria-label="次の写真"><svg class="ic"><use href="#i-right"/></svg></button>
+        <button id="btnModalClose" type="button" class="icon" title="閉じる(Esc)" aria-label="閉じる"><svg class="ic"><use href="#i-close"/></svg></button>
+      </div>
+    </div>
+    <div id="modalBody"></div>
+    <div class="modal-hint">← → キー、またはマウスホイールで、前後の写真に切り替えられます。</div>
+  </div>
+</div>
+<div id="toast" hidden role="status"></div>
+
+<script>
+'use strict';
+/* =========================================================
+ * Gomi photo
+ *  - 外部通信コードなし。写真フォルダは読み取りのみ(最大5つ)
+ *  - 書き込みは、利用者が指定したコピー先フォルダ内に新しい子フォルダを作ってコピーするだけ
+ *    (既存ファイルの上書きはしない。削除は、コピー成功時の「古いコピーフォルダ」の整理のみ)
+ *  - 保存するのはフォルダへの参照(ハンドル)のみ。写真データ・パスは保存しない
+ * ========================================================= */
+(() => {
+
+const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'webp']);
+const MAX_DEPTH = 20;
+const MAX_PHOTO_FOLDERS = 5;       // 同時に選べる写真フォルダの数
+const MAX_TEMP = 5;                // ドロップして一時的に開けるフォルダの数
+const KEEP_FOLDERS = 2;            // コピー先に残すコピーフォルダの数(今回作ったものを含む)。1にすると今回分だけ残す
+const SMALL_BYTES = 1048576;       // 1MB。これ未満の写真に「1MB未満」の印を付ける
+const THUMB_W = 300;               // 検索結果のサムネイル幅
+const THUMB_W_BROWSE = 200;        // 閲覧のサムネイル幅
+const BROWSE_MAX = 600;            // 閲覧で一度に表示する最大件数
+const CODE_RE_SRC = '(?<![A-Za-z0-9])([A-Za-z]{3})-([0-9]{3})(?![A-Za-z0-9])';
+const CODE_FORMAT = /^[A-Z]{3}-[0-9]{3}$/;
+
+/** 閲覧の状態(登録した写真フォルダ用と、一時タブ1つ1つに、それぞれ1つずつ持つ) */
+function newCtx() { return { entries: [], loaded: false, loading: false, run: 0, path: '', view: [], q: '', small: false, msg: '', msgKind: 'info' }; }
+const state = {
+  photos: [],           // 写真フォルダ [{id, handle, status, label}]  status: needs | ready
+  out: { handle: null, status: 'none' },   // コピー先  status: none | needs | ready
+  codes: [],            // 本文から抽出した写真番号(例:CYC-007)
+  prefixCands: [],      // 本文にある英字3文字だけの候補(例:CYC)。フォルダにある英字だけが有効
+  prefixes: [],         // 検索で有効と確認できた英字(例:CYC)
+  lastKey: '',
+  searched: false, searching: false,
+  sinfo: null,                               // 検索結果の補足(統計・容量の確認状況)
+  searchedCodes: [], results: new Map(),     // 番号 -> [ファイル情報]
+  prefixGroups: [],                          // [{prefix, items:[{code, files}]}]
+  selected: new Set(),                       // 検索結果で選択中のファイルkey
+  extra: new Map(),                          // 閲覧で追加したファイル key -> ファイル情報
+  copying: false, csvBusy: false,
+  tab: 'results',                          // results | browse | temp:<id>
+  temps: [],                               // ドロップして一時的に開いたフォルダ [{id, handle, label, ctx}]
+  browse: newCtx(),     // 登録した写真フォルダの閲覧(path: いま開いているフォルダ 例:sub/inner/)
+  run: 0, gen: 0, genB: 0
+};
+let keySeq = 0, idSeq = 0, tempSeq = 0;
+const multi = () => state.photos.length > 1;
+
+/* ---------- 補助 ---------- */
+const $ = id => document.getElementById(id);
+function icon(name) {
+  const ns = 'http://www.w3.org/2000/svg';
+  const s = document.createElementNS(ns, 'svg');
+  s.setAttribute('class', 'ic'); s.setAttribute('aria-hidden', 'true');
+  const u = document.createElementNS(ns, 'use');
+  u.setAttribute('href', '#i-' + name);
+  s.append(u);
+  return s;
+}
+function h(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  if (attrs) for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k === 'class') e.className = v;
+    else if (k === 'text') e.textContent = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (v === true) e.setAttribute(k, '');
+    else e.setAttribute(k, v);
+  }
+  for (const c of kids.flat()) { if (c == null || c === false) continue; e.append(c.nodeType ? c : document.createTextNode(String(c))); }
+  return e;
+}
+function notice(id, text, kind) { const e = $(id); e.className = 'notice ' + (kind || 'info'); e.textContent = text || ''; }
+let toastTimer = null;
+function toast(text, kind) {
+  const t = $('toast'); t.textContent = text; t.className = kind === 'err' ? 'err' : ''; t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 2800);
+}
+const tick = () => new Promise(r => setTimeout(r, 0));
+function describeError(e) {
+  const n = e && e.name;
+  if (n === 'NotAllowedError') return 'アクセスが許可されていません。フォルダの権限、または組織の設定でブロックされている可能性があります。';
+  if (n === 'NotFoundError') return 'フォルダまたはファイルが見つかりません。移動・削除された可能性があります。';
+  if (n === 'NotReadableError') return 'ファイルを読み取れません。他のプログラムが使用中か、アクセス権がない可能性があります。';
+  if (n === 'SecurityError') return 'ブラウザまたは組織のセキュリティ設定により、この操作が制限されています。';
+  if (n === 'QuotaExceededError') return 'コピー先の空き容量が足りない可能性があります。';
+  return '予期しないエラーが発生しました(' + (n || '不明') + ')。';
+}
+/** どの写真フォルダで起きたエラーかも添える */
+function describeFolderError(e) { return (e && e.folderLabel ? '「' + e.folderLabel + '」:' : '') + describeError(e); }
+function pad(n) { return String(n).padStart(2, '0'); }
+function stamp() {
+  const d = new Date();
+  return d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '_' + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds());
+}
+function ymd() { const d = new Date(); return d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()); }
+function fmtDate(ms) {
+  const d = new Date(ms);
+  return d.getFullYear() + '/' + pad(d.getMonth() + 1) + '/' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+}
+function fmtBig(b) { return b >= 1073741824 ? (b / 1073741824).toFixed(2) + ' GB' : fmtSize(b); }
+function fmtSize(b) { return b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB'; }
+function csvCell(v) { return '"' + String(v).replace(/"/g, '""') + '"'; }
+function saveBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = h('a', { href: url, download: filename, style: 'display:none' });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 15000);
+}
+/** 写真の場所の表示(写真フォルダが複数のときは、フォルダ名から) */
+function placeOf(e) { return (multi() ? e.root + '/' : '') + e.rel; }
+
+/* ---------- フォルダ参照の記憶(IndexedDB。参照のみ保存) ---------- */
+function idbOpen() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('kankou-photo-search', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('handles');
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+async function idbGet(key) {
+  try {
+    const db = await idbOpen();
+    return await new Promise((res, rej) => {
+      const q = db.transaction('handles').objectStore('handles').get(key);
+      q.onsuccess = () => res(q.result || null);
+      q.onerror = () => rej(q.error);
+    });
+  } catch (e) { return null; }
+}
+async function idbSet(key, val) {
+  try {
+    const db = await idbOpen();
+    await new Promise((res, rej) => {
+      const t = db.transaction('handles', 'readwrite');
+      t.objectStore('handles').put(val, key);
+      t.oncomplete = () => res();
+      t.onerror = () => rej(t.error);
+    });
+    return true;
+  } catch (e) { return false; }
+}
+const persistPhotos = () => idbSet('photos', state.photos.map(f => f.handle));
+/** 写真フォルダの中身を調べる:サブフォルダの数・写真の枚数・写真の合計容量(読み取りのみ。一覧と容量は覚えて、検索でも使う) */
+async function scanFolderInfo(f) {
+  const tok = (f.scanTok = (f.scanTok || 0) + 1);
+  const info = { dirs: 0, photos: 0, bytes: 0, partial: false };
+  f.info = info; f.scanning = true;
+  renderFolders();
+  const isStale = () => f.scanTok !== tok || !state.photos.includes(f);
+  try {
+    const l = await getListing(f);
+    if (isStale()) return;
+    info.dirs = l.stats.dirs; info.photos = l.entries.length; info.partial = l.stats.skippedDirs > 0;
+    renderFolders();
+    const ents = cloneEntries(l.entries, f);
+    ents.forEach(applyMeta);
+    const sum = () => { let b = 0; for (const e of ents) { if (e.size > 0) b += e.size; else if (e.size < 0) info.partial = true; } info.bytes = b; };
+    sum();
+    await fetchMetas(ents, { low: true, onProgress: d => { if (d % 40 === 0) { sum(); if (!isStale()) renderFolders(); } }, isStale });   // 裏の調査は後回し(検索などを優先)
+    if (isStale()) return;
+    sum();
+  } catch (e) { if (!isStale()) f.info = { error: true }; }
+  finally { if (f.scanTok === tok) { f.scanning = false; renderFolders(); } }
+}
+/** まだ調べていない(許可済みの)写真フォルダを調べる */
+function scanPending() { for (const f of state.photos) if (f.status === 'ready' && !f.info && !f.scanning) scanFolderInfo(f); }
+function rescanAll() { for (const f of state.photos) { f.info = null; f.scanning = false; f.scanTok = (f.scanTok || 0) + 1; } scanPending(); }
+function folderInfoText(f) {
+  if (f.status !== 'ready') return '';
+  if (f.scanning) return '調べています… ' + (f.info ? f.info.photos + '枚' : '');
+  if (!f.info) return '';
+  if (f.info.error) return '情報を取得できません';
+  const i = f.info;
+  return 'フォルダ' + i.dirs + ' ・ ' + i.photos + '枚 ・ ' + fmtBig(i.bytes) + (i.partial ? '(一部不明)' : '');
+}
+function folderInfoTitle(f) {
+  if (!f.info || f.info.error || f.scanning) return f.label;
+  const i = f.info;
+  return f.label + '\nサブフォルダ ' + i.dirs + '個 / 写真 ' + i.photos + '枚 / 合計 ' + fmtBig(i.bytes) + '(jpg・jpeg・png・webpのみ)' + (i.partial ? '\n読み取れなかった部分があります' : '');
+}
+/** 同じ名前の写真フォルダを区別するための表示名を付ける */
+function relabel() {
+  const cnt = new Map();
+  for (const f of state.photos) {
+    const n = (cnt.get(f.handle.name) || 0) + 1;
+    cnt.set(f.handle.name, n);
+    f.label = n > 1 ? f.handle.name + ' (' + n + ')' : f.handle.name;
+  }
+}
+async function restoreFolders() {
+  let list = await idbGet('photos');
+  if (!Array.isArray(list)) { const legacy = await idbGet('photo'); list = legacy ? [legacy] : []; }   // 旧版で選んだ1つ目を引き継ぐ
+  for (const hd of list.slice(0, MAX_PHOTO_FOLDERS)) {
+    try {
+      const p = await hd.queryPermission({ mode: 'read' });
+      state.photos.push({ id: ++idSeq, handle: hd, status: p === 'granted' ? 'ready' : 'needs', label: '' });
+    } catch (e) { /* 使えなくなったフォルダは読み込まない */ }
+  }
+  relabel();
+  const out = await idbGet('out');
+  if (out) {
+    try { const p = await out.queryPermission({ mode: 'readwrite' }); state.out = { handle: out, status: p === 'granted' ? 'ready' : 'needs' }; }
+    catch (e) { state.out = { handle: null, status: 'none' }; }
+  }
+}
+const allReady = () => state.photos.length > 0 && state.photos.every(f => f.status === 'ready');
+/** 検索や閲覧を始められないときの案内文(始められるときは空) */
+function notReadyMessage() {
+  if (!state.photos.length) return '写真フォルダが未設定です。手順1で「写真フォルダを選ぶ」を押してください。';
+  const n = state.photos.filter(f => f.status !== 'ready').length;
+  return n ? '許可が必要な写真フォルダが' + n + '件あります。手順1で「許可する」を押すと、自動で検索します。' : '';
+}
+/** 2つのフォルダが同じ、または一方がもう一方の中にあるとき true */
+async function overlaps(a, b) {
+  try {
+    if (await a.isSameEntry(b)) return true;
+    if ((await a.resolve(b)) !== null) return true;
+    return (await b.resolve(a)) !== null;
+  } catch (e) { return false; }
+}
+/** 写真フォルダとコピー先が同じ、またはコピー先が写真フォルダの中にある場合は true */
+async function conflicts(photoH, outH) {
+  try {
+    if (await photoH.isSameEntry(outH)) return true;
+    return (await photoH.resolve(outH)) !== null;
+  } catch (e) { return false; }
+}
+async function pickDir(id, mode) {
+  if (typeof window.showDirectoryPicker !== 'function') {
+    notice('folderMsg', 'このブラウザではフォルダを選択できません。Microsoft Edge(通常モード)で開いてください。', 'error');
+    return null;
+  }
+  try { return await window.showDirectoryPicker({ id, mode }); }
+  catch (e) {
+    if (e && e.name === 'AbortError') return null;   // キャンセルはエラー扱いしない
+    notice('folderMsg', describeError(e), 'error');
+    return null;
+  }
+}
+async function addPhotoFolder() {
+  if (state.photos.length >= MAX_PHOTO_FOLDERS) { notice('folderMsg', '写真フォルダは最大' + MAX_PHOTO_FOLDERS + 'つまでです。', 'warn'); return; }
+  const hd = await pickDir('kj-photos', 'read');
+  if (!hd) return;
+  for (const f of state.photos) {
+    if (await overlaps(f.handle, hd)) { notice('folderMsg', '「' + f.label + '」と重なるフォルダです(同じ、または一方がもう一方の中にあります)。別のフォルダを選んでください。', 'error'); return; }
+  }
+  if (state.out.handle && await conflicts(hd, state.out.handle)) { notice('folderMsg', 'コピー先が、このフォルダの中にあります。別のフォルダを選んでください。', 'error'); return; }
+  state.photos.push({ id: ++idSeq, handle: hd, status: 'ready', label: '' });
+  relabel();
+  scanPending();
+  const saved = await persistPhotos();
+  notice('folderMsg', '', 'info');
+  if (!saved) toast('この環境ではフォルダを記憶できません(次回も選び直しが必要です)');
+  onPhotoSetChanged();
+}
+async function removePhotoFolder(f) {
+  listCache.delete(f.id);
+  state.photos = state.photos.filter(x => x !== f);
+  for (const [k, e] of Array.from(state.extra)) if (e.rootId === f.id) state.extra.delete(k);   // そのフォルダから追加した写真は外す
+  relabel();
+  await persistPhotos();
+  notice('folderMsg', '', 'info');
+  onPhotoSetChanged();
+}
+async function pickOutFolder() {
+  const hd = await pickDir('kj-out', 'readwrite');
+  if (!hd) return;
+  for (const f of state.photos) {
+    if (await conflicts(f.handle, hd)) { notice('folderMsg', 'コピー先は、写真フォルダとは別の場所(写真フォルダの外)を選んでください。', 'error'); return; }
+  }
+  state.out = { handle: hd, status: 'ready' };
+  const saved = await idbSet('out', hd);
+  notice('folderMsg', '', 'info');
+  if (!saved) toast('この環境ではフォルダを記憶できません(次回も選び直しが必要です)');
+  renderFolders(); renderCopyArea();
+}
+/** 許可の確認(f は写真フォルダの項目、またはコピー先) */
+async function grantFolder(f, mode) {
+  if (!f.handle) return;
+  try {
+    const p = await f.handle.requestPermission({ mode });
+    if (p === 'granted') {
+      f.status = 'ready'; notice('folderMsg', '', 'info');
+      renderFolders(); renderCopyArea();
+      if (mode === 'read') scanPending();
+      if (mode === 'read' && allReady()) onPhotoSetChanged();
+    } else notice('folderMsg', '許可されませんでした。もう一度「許可する」を押すか、フォルダを選び直してください。', 'warn');
+  } catch (e) {
+    notice('folderMsg', describeError(e), 'error');
+  }
+}
+/** 写真フォルダの組み合わせ・許可の状態が変わったとき */
+function onPhotoSetChanged() {
+  resetBrowse();
+  state.lastKey = '';
+  if (allReady() && (state.codes.length || state.prefixCands.length)) runSearch();   // 本文が貼り付け済みなら自動で検索
+  else clearResults();
+  if (state.tab === 'browse') loadCtx(state.browse, true);
+  renderAll();
+}
+
+/* ---------- 写真番号の抽出 ---------- */
+function normalizeText(s) {
+  return s
+    .replace(/[\uFF21-\uFF3A\uFF41-\uFF5A\uFF10-\uFF19]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/[\uFF0D\u2010-\u2015\u2212]/g, '-');
+}
+function extractCodes(text) {
+  const re = new RegExp(CODE_RE_SRC, 'g');
+  const seen = new Set(), out = [];
+  for (const m of normalizeText(text).matchAll(re)) {
+    const code = (m[1] + '-' + m[2]).toUpperCase();
+    if (!seen.has(code)) { seen.add(code); out.push(code); }
+  }
+  return out;
+}
+/** 英字3文字だけの候補(例:CYC)。完全な写真番号の部分は除く。フォルダに実在する英字かどうかは検索時に確認する */
+function extractPrefixCandidates(text) {
+  const t = normalizeText(text).replace(new RegExp(CODE_RE_SRC, 'g'), m => ' '.repeat(m.length));
+  const re = /(?<![A-Za-z0-9])([A-Za-z]{3})(?![A-Za-z0-9]|-[0-9])/g;
+  const seen = new Set(), out = [];
+  for (const m of t.matchAll(re)) {
+    const p = m[1].toUpperCase();
+    if (!seen.has(p)) { seen.add(p); out.push(p); }
+  }
+  return out;
+}
+const keyNow = () => state.codes.join(',') + '|' + state.prefixCands.join(',');
+let inputTimer = null;
+function extractAndSearch() {
+  const text = $('mailBody').value;
+  state.codes = extractCodes(text);
+  state.prefixCands = extractPrefixCandidates(text);
+  if (!text.trim()) { clearResults(); notice('mailMsg', '', 'info'); return; }
+  if (!state.codes.length && !state.prefixCands.length) {
+    clearResults();
+    notice('mailMsg', '写真番号(例:CYC-007)が見つかりませんでした。本文を確認してください。', 'warn');
+    return;
+  }
+  notice('mailMsg', '', 'info');
+  const key = keyNow();
+  if (key === state.lastKey && state.searched) { renderExtracted(); return; }   // 内容が変わっていなければ再検索しない
+  state.lastKey = key;
+  runSearch();
+}
+function removeCode(code) {
+  state.codes = state.codes.filter(c => c !== code);
+  if (state.searched) {
+    state.searchedCodes = state.searchedCodes.filter(c => c !== code);
+    const fs = state.results.get(code);
+    if (fs) fs.forEach(f => state.selected.delete(f.key));
+    state.results.delete(code);
+  }
+  state.lastKey = keyNow();
+  renderAll();
+}
+function removePrefix(p) {
+  state.prefixCands = state.prefixCands.filter(x => x !== p);
+  state.prefixes = state.prefixes.filter(x => x !== p);
+  const g = state.prefixGroups.find(x => x.prefix === p);
+  if (g) for (const it of g.items) for (const f of it.files) state.selected.delete(f.key);
+  state.prefixGroups = state.prefixGroups.filter(x => x.prefix !== p);
+  state.lastKey = keyNow();
+  renderAll();
+}
+function clearAll() {
+  $('mailBody').value = '';
+  state.codes = []; state.prefixCands = []; state.lastKey = '';
+  state.extra.clear();
+  clearResults();
+  notice('mailMsg', '', 'info');
+  if (state.tab !== 'results' && activeCtx().loaded) renderBrowse();
+}
+function clearResults() {
+  state.run++;                 // 実行中の検索があれば結果を破棄する
+  state.searching = false;
+  state.searched = false; state.searchedCodes = []; state.results = new Map();
+  state.prefixGroups = []; state.prefixes = []; state.selected = new Set(); state.sinfo = null;
+  notice('searchMsg', '', 'info'); notice('copyMsg', '', 'info');
+  renderAll();
+}
+
+/* ---------- 検索(読み取りのみ) ---------- */
+function addEntry(out, stats, name, rel, getFile, root) {
+  const i = name.lastIndexOf('.');
+  const ext = i >= 0 ? name.slice(i + 1).toLowerCase() : '';
+  if (!IMAGE_EXTS.has(ext)) return;           // 画像以外は無視
+  stats.images++;
+  out.push({ key: ++keySeq, name, rel, ext, base: name.slice(0, i).trim().toUpperCase(), getFile, root: root.label, rootId: root.id });
+}
+async function walk(dir, prefix, depth, out, stats, root) {
+  try {
+    for await (const [name, hd] of dir.entries()) {
+      if (hd.kind === 'file') {
+        stats.total++;
+        addEntry(out, stats, name, prefix, () => hd.getFile(), root);
+        if (stats.total % 200 === 0) await tick();
+      } else if (hd.kind === 'directory') {
+        stats.dirs = (stats.dirs || 0) + 1;
+        if (depth < MAX_DEPTH) await walk(hd, prefix + name + '/', depth + 1, out, stats, root);
+        else stats.skippedDirs++;
+      }
+    }
+  } catch (e) {
+    if (depth === 0) throw e;
+    stats.skippedDirs++;
+  }
+}
+/* ---------- 速度改善:一覧・容量・見本画像を覚えておく / 複数同時に読む(庁内ネットワークのフォルダ向け) ---------- */
+const FETCH_LIMIT = 8;           // 容量などを、同時に読む数
+const STALE_MS = 60 * 1000;      // 覚えていたフォルダの一覧が「古い」とみなす時間(未検出があるときだけ、これより古ければ最新の状態を確認し直す)
+const THUMB_CACHE_W = 300, THUMB_CACHE_MAX = 3000;
+const listCache = new Map();     // 写真フォルダのid -> { ts, promise }(フォルダの中の写真の一覧)
+const metaCache = new Map();     // 写真の場所 -> { size, mtime }(容量・更新日時)
+const metaInflight = new Map();
+const thumbCache = new Map();    // 写真の場所 -> { blob, size, mtime }(小さな見本画像。アプリを閉じると消える。ディスクには保存しない)
+const thumbInflight = new Map();
+function clearCaches() { listCache.clear(); metaCache.clear(); thumbCache.clear(); }
+const hhmm = ms => { const d = new Date(ms); return pad(d.getHours()) + ':' + pad(d.getMinutes()); };
+function keepScroll(id, fn) { const el = $(id); const t = el.scrollTop; fn(); el.scrollTop = t; }
+/** items を worker で順に処理する。limit 件ずつ同時に進める */
+async function pool(items, worker, limit, isStale) {
+  let next = 0;
+  const run = async () => {
+    while (next < items.length) {
+      if (isStale && isStale()) return;
+      const idx = next++;
+      try { await worker(items[idx], idx); } catch (e) { /* 1件の失敗で止めない */ }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, run));
+}
+/** 全体で同時に読むファイル数の上限(複数の処理が同時に動いても、サーバーに負担をかけすぎない) */
+let metaActive = 0; const metaWait = [], metaWaitLow = [];     // 通常の待ち行列と、後回し(裏の調査用)の待ち行列
+function limited(fn, low) {
+  return new Promise((res, rej) => {
+    const go = () => { metaActive++; fn().then(res, rej).finally(() => { metaActive--; const nx = metaWait.shift() || metaWaitLow.shift(); if (nx) nx(); }); };
+    if (metaActive < FETCH_LIMIT) go(); else (low ? metaWaitLow : metaWait).push(go);
+  });
+}
+/** フォルダの中の写真の一覧を取る。同じフォルダは、覚えている一覧を使い回す(force で読み直す) */
+function getListing(src, force) {
+  const hit = listCache.get(src.id);
+  if (hit && !force) return hit.promise;
+  const ent = { ts: Date.now(), promise: null };
+  ent.promise = (async () => {
+    const out = [], stats = { total: 0, images: 0, skippedDirs: 0, dirs: 0 };
+    try { await walk(src.handle, '', 0, out, stats, { label: src.label, id: src.id }); }
+    catch (e) {
+      if (listCache.get(src.id) === ent) listCache.delete(src.id);
+      try { e.folderLabel = src.label; } catch (e2) { /* 無視 */ }
+      throw e;
+    }
+    return { entries: out, stats, ts: ent.ts };
+  })();
+  listCache.set(src.id, ent);
+  return ent.promise;
+}
+/** 覚えている一覧は、使う側ごとに複製して渡す(チェックなどの状態が、検索結果と閲覧で混ざらないように) */
+function cloneEntries(list, src) {
+  return list.map(e => ({ ...e, root: src.label, key: ++keySeq, cb: null, largest: false, size: undefined, mtime: undefined, vrel: undefined }));
+}
+function applyMeta(e) { const m = metaCache.get(pathKey(e)); if (m) { e.size = m.size; e.mtime = m.mtime; } }
+function getMeta(e, low) {
+  const k = pathKey(e);
+  const hit = metaCache.get(k);
+  if (hit) return Promise.resolve(hit);
+  let p = metaInflight.get(k);
+  if (!p) {
+    p = limited(() => e.getFile(), low).then(f => { const m = { size: f.size, mtime: f.lastModified }; metaCache.set(k, m); return m; }).finally(() => metaInflight.delete(k));
+    metaInflight.set(k, p);
+  }
+  return p;
+}
+/** 容量が分かった写真の表示(容量の行と、1MB未満の枠)だけを書き換える */
+function patchSize(f) {
+  if (f.sizeEl && f.sizeEl.isConnected) { const n = sizeLine(f); f.sizeEl.replaceWith(n); f.sizeEl = n; }
+  if (f.cardEl && f.cardEl.isConnected) f.cardEl.classList.toggle('is-small', f.size >= 0 && f.size < SMALL_BYTES);
+}
+/** 容量・更新日時がまだ分からない写真を、複数同時に調べる */
+async function fetchMetas(entries, opt) {
+  const todo = entries.filter(e => e.size === undefined);
+  let done = 0;
+  await pool(todo, async e => {
+    try { const m = await getMeta(e, opt && opt.low); e.size = m.size; e.mtime = m.mtime; } catch (err) { e.size = -1; }
+    done++;
+    if (opt && opt.onEach) opt.onEach(e);
+    if (opt && opt.onProgress) opt.onProgress(done, todo.length);
+  }, FETCH_LIMIT, opt && opt.isStale);
+}
+/** 選択中の写真フォルダすべての一覧(フォルダごとに同時に読む) */
+async function getListings(force) {
+  const parts = await Promise.all(state.photos.map(async f => {
+    try { return { f, l: await getListing(f, force) }; }
+    catch (e) { if (e && e.name === 'NotAllowedError') { f.status = 'needs'; renderFolders(); } throw e; }
+  }));
+  const entries = [], stats = { total: 0, images: 0, skippedDirs: 0, dirs: 0 };
+  let oldest = Date.now();
+  for (const { f, l } of parts) {
+    entries.push(...cloneEntries(l.entries, f));
+    for (const k of Object.keys(stats)) stats[k] += l.stats[k] || 0;
+    oldest = Math.min(oldest, l.ts);
+  }
+  entries.forEach(applyMeta);
+  return { entries, stats, oldest };
+}
+const byPath = (a, b) => (a.root + '/' + a.rel + a.name).localeCompare(b.root + '/' + b.rel + b.name, 'ja');
+/** 同じ番号のファイルが複数あるとき、画面に出すのは容量が最大のものだけ(最大が決まらないときは全件) */
+function shownFiles(files) {
+  if (files.length > 1 && files.some(f => f.largest)) return files.filter(f => f.largest);
+  return files;
+}
+/** フォルダの一覧から、番号ごとの検索結果と、英字だけの指定のグループを作る(容量はまだ調べない) */
+function buildSearch(L) {
+  const index = new Map();
+  for (const e of L.entries) { if (!index.has(e.base)) index.set(e.base, []); index.get(e.base).push(e); }
+  // フォルダに実在する英字3文字だけを、英字検索の対象にする
+  const prefixSet = new Set();
+  for (const base of index.keys()) if (CODE_FORMAT.test(base)) prefixSet.add(base.slice(0, 3));
+  const prefixes = state.prefixCands.filter(p => prefixSet.has(p));
+  if (!state.codes.length && !prefixes.length) return null;
+  const results = new Map();
+  for (const code of state.codes) {
+    const arr = index.get(code);
+    if (arr) results.set(code, arr.slice().sort(byPath));
+  }
+  // 英字だけの指定:その英字の全写真(指定された番号は上の一覧にあるので除く)
+  const explicit = new Set(state.codes);
+  const groups = prefixes.map(p => {
+    const items = [];
+    for (const [base, arr] of index) {
+      if (CODE_FORMAT.test(base) && base.startsWith(p + '-') && !explicit.has(base)) items.push({ code: base, files: arr.slice().sort(byPath) });
+    }
+    items.sort((a, b) => a.code.localeCompare(b.code));
+    return { prefix: p, items };
+  });
+  return { results, groups, prefixes, missN: state.codes.length - results.size };
+}
+/** 同じ番号が複数あるとき、容量が最大のファイルを使う(別の写真フォルダにあっても同じ) */
+function chooseLead(fs, info) {
+  const max = Math.max(...fs.map(f => f.size));
+  if (max < 0) return null;                   // 容量を取得できない場合は決めない(全件を表示・選択)
+  const top = fs.filter(f => f.size === max);
+  if (top.length > 1) info.tieN++;
+  top[0].largest = true;
+  return top[0];
+}
+/** 検索結果の上のメッセージ(容量の確認が進むたびに作り直す) */
+function renderSearchMsg() {
+  const s = state.sinfo;
+  if (!s || !state.searched) return;
+  const missN = state.searchedCodes.length - state.results.size;
+  let multiN = 0, smallN = 0;
+  const scan = fs => { if (fs.length > 1) multiN++; for (const f of shownFiles(fs)) if (f.size >= 0 && f.size < SMALL_BYTES) smallN++; };
+  for (const fs of state.results.values()) scan(fs);
+  for (const g of state.prefixGroups) for (const it of g.items) scan(it.files);
+  const parts = [];
+  if (multi()) parts.push(state.photos.length + 'つの写真フォルダを検索しました。');
+  if (state.searchedCodes.length) parts.push(state.results.size + '件の写真が見つかりました。' + (missN ? '未検出が' + missN + '件あります。' : ''));
+  for (const g of state.prefixGroups) parts.push('「' + g.prefix + '」の写真' + g.items.length + '件を下に表示しています(チェックは外れています)。');
+  if (multiN) parts.push('同じ番号のファイルが複数ある番号が' + multiN + '件あり、容量が最大のファイルを使います。' + (s.tieN ? '(容量が同じものが' + s.tieN + '件あり、先頭のファイルを選んでいます)' : ''));
+  if (smallN) parts.push('1MB未満の写真が' + smallN + '件あります。');
+  if (s.pending) parts.push('(英字検索の写真の容量を確認中… ' + s.done + '/' + s.total + ')');
+  if (Date.now() - s.listedAt > 2 * 60 * 1000) parts.push('(フォルダの一覧は ' + hhmm(s.listedAt) + ' に読み込んだものです。「フォルダ内の写真」の再読み込みで更新できます)');
+  let msg = parts.join(' ');
+  let kind = (missN || smallN || s.tieN) ? 'warn' : 'ok';
+  const st = s.stats;
+  if (st.total === 0) { msg = '写真フォルダにファイルがありません(空のフォルダです)。フォルダを確認してください。'; kind = 'warn'; }
+  else if (st.images === 0) { msg += ' 対象の画像(jpg/jpeg/png/webp)がフォルダにありません。'; kind = 'warn'; }
+  if (st.skippedDirs) { msg += ' 読み取れなかった(または階層が深すぎる)サブフォルダが' + st.skippedDirs + '件あります。'; kind = 'warn'; }
+  notice('searchMsg', msg, kind);
+}
+async function runSearch() {
+  if (!state.codes.length && !state.prefixCands.length) return;
+  const nr = notReadyMessage();
+  if (nr) { notice('searchMsg', nr, 'warn'); return; }
+  const token = ++state.run;
+  state.searching = true;
+  state.searched = false; state.results = new Map(); state.prefixGroups = []; state.prefixes = []; state.selected = new Set(); state.sinfo = null;
+  notice('copyMsg', '', 'info');
+  renderAll();
+  try {
+    let built = null, L = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      notice('searchMsg', attempt ? '最新のフォルダの状態を確認しています…' : '検索しています…', 'info');
+      L = await getListings(attempt > 0);                 // 覚えている一覧があれば、それを使う(速い)
+      if (token !== state.run) return;
+      built = buildSearch(L);
+      // 見つからない番号があり、覚えていた一覧が古いときは、最新の状態で1度だけ確認し直す(追加された写真の見落とし防止)
+      if (attempt === 0 && Date.now() - L.oldest > STALE_MS && (!built || built.missN > 0)) continue;
+      break;
+    }
+    if (!built) {
+      notice('searchMsg', '', 'info');
+      notice('mailMsg', '写真番号(例:CYC-007)が見つかりませんでした。本文を確認してください。', 'warn');
+      return;     // finally で表示を更新する
+    }
+    const { results, groups, prefixes } = built;
+    const info = { stats: L.stats, tieN: 0, listedAt: L.oldest, pending: false, done: 0, total: 0 };
+
+    // ① 指定された番号の写真:容量を複数同時に調べる(複数ある番号は、容量で選ぶため、先に必要)
+    const explicitFiles = [];
+    for (const fs of results.values()) explicitFiles.push(...fs);
+    await fetchMetas(explicitFiles, { onProgress: (d, n) => notice('searchMsg', '容量を確認中… ' + d + '/' + n + '件', 'info'), isStale: () => token !== state.run });
+    if (token !== state.run) return;
+    const picks = new Set();
+    for (const fs of results.values()) {
+      if (fs.length === 1) { picks.add(fs[0].key); continue; }
+      const lead = chooseLead(fs, info);
+      if (lead) picks.add(lead.key); else fs.forEach(f => picks.add(f.key));
+    }
+    // ② 英字だけの指定の写真:容量が分かっているものは反映し、分からないものは、表示したあとで裏で調べる
+    for (const g of groups) for (const it of g.items) if (it.files.length > 1 && it.files.every(f => f.size !== undefined)) chooseLead(it.files, info);
+    const pendingFiles = [];
+    for (const g of groups) for (const it of g.items) for (const f of it.files) if (f.size === undefined) pendingFiles.push(f);
+
+    state.results = results;
+    state.searchedCodes = state.codes.slice();
+    state.prefixes = prefixes;
+    state.prefixGroups = groups;
+    state.searched = true;
+    state.selected = picks;
+    state.sinfo = info;
+    info.pending = pendingFiles.length > 0; info.total = pendingFiles.length;
+    state.searching = false;
+    renderAll();                       // ここで結果を表示(容量の確認を待たない)
+    renderSearchMsg();
+
+    if (pendingFiles.length) {
+      await fetchMetas(pendingFiles, { onEach: patchSize, onProgress: d => { info.done = d; if (d % 10 === 0) renderSearchMsg(); }, isStale: () => token !== state.run });
+      if (token !== state.run) return;
+      let resolved = false;      // 同じ番号が複数あって、容量で1つに決めた番号があるときだけ、一覧を作り直す
+      for (const g of groups) for (const it of g.items) if (it.files.length > 1 && !it.files.some(f => f.largest) && chooseLead(it.files, info)) resolved = true;
+      info.pending = false;
+      if (resolved) keepScroll('resultScroll', renderResults);
+      renderSearchMsg(); renderCopyArea();
+    }
+  } catch (e) {
+    if (token !== state.run) return;
+    notice('searchMsg', describeFolderError(e), 'error');
+  } finally {
+    if (token === state.run && state.searching) { state.searching = false; renderAll(); }
+  }
+}
+
+/* ---------- ファイル一覧/選択 ---------- */
+function allFiles() {
+  const out = [];
+  for (const code of state.searchedCodes) { const fs = state.results.get(code); if (fs) out.push(...fs); }
+  for (const g of state.prefixGroups) for (const it of g.items) out.push(...it.files);
+  return out;
+}
+function selectedFiles() { return allFiles().filter(f => state.selected.has(f.key)); }
+/** コピーする写真:検索結果で選択中のもの + 閲覧で追加したもの(同じファイルは1つにまとめる) */
+/** 同じ写真かどうかの判定キー(写真フォルダ + 場所 + ファイル名) */
+const pathKey = f => (f.rootId + '/' + f.rel + f.name).toLowerCase();
+function copyList() {
+  const seen = new Set(), out = [];
+  for (const f of selectedFiles().concat(Array.from(state.extra.values()))) {
+    const k = pathKey(f);
+    if (seen.has(k)) continue;
+    seen.add(k); out.push(f);
+  }
+  return out;
+}
+function setGroupSelection(g, on) {
+  for (const it of g.items) for (const f of shownFiles(it.files)) {
+    if (on) state.selected.add(f.key); else state.selected.delete(f.key);
+    if (f.cb) f.cb.checked = on;
+  }
+  renderCopyArea();
+}
+
+/* ---------- コピー出力(コピー先に新しい子フォルダを作って書き込む) ---------- */
+/**
+ * コピー先の子フォルダ名を作る。例:CYC-001_CYC-002..._20261027_145745
+ * 写真番号は先頭2つ(コピーする写真の並び順)。3つ以上のときだけ「...」を付ける。
+ */
+function folderNameFor(files) {
+  const codes = Array.from(new Set(files.map(f => f.base)));
+  return codes.slice(0, 2).join('_') + (codes.length > 2 ? '...' : '') + '_' + stamp();
+}
+async function uniqueInDir(dir, name, used) {
+  const dot = name.lastIndexOf('.');
+  const stem = dot >= 0 ? name.slice(0, dot) : name;
+  const ext = dot >= 0 ? name.slice(dot) : '';
+  let cand = name, i = 2;
+  for (;;) {
+    if (!used.has(cand.toLowerCase())) {
+      let exists = true;
+      try { await dir.getFileHandle(cand); } catch (e) { exists = false; }   // 既存ファイルは上書きしない
+      if (!exists) { used.add(cand.toLowerCase()); return cand; }
+    }
+    cand = stem + '_' + (i++) + ext;
+  }
+}
+/**
+ * 古いコピーフォルダを削除し、新しい順に KEEP_FOLDERS 個だけ残す。
+ * 対象はコピー先フォルダ直下で、名前が「写真番号(1〜2個)(...)_YYYYMMDD_HHMMSS」
+ * または旧形式「提供_YYYYMMDD_HHMMSS」のフォルダのみ。
+ * 今回作成したフォルダ(keepName)は必ず残す。写真フォルダや他の名前のものには触れない。
+ */
+async function pruneOld(keepName) {
+  const re = /^(提供|[A-Z]{3}-\d{3}(_[A-Z]{3}-\d{3})?(\.\.\.)?)_\d{8}_\d{6}$/;
+  const tsOf = n => n.slice(-15);   // 末尾の「YYYYMMDD_HHMMSS」で新旧を比べる
+  const names = [];
+  for await (const [name, hd] of state.out.handle.entries()) {
+    if (hd.kind === 'directory' && re.test(name) && name !== keepName) names.push(name);
+  }
+  names.sort((x, y) => tsOf(y).localeCompare(tsOf(x)));     // 新しい順
+  const targets = names.slice(Math.max(0, KEEP_FOLDERS - 1)); // 今回分を除いた残り枠を超えるもの
+  const done = [], failed = [];
+  for (const n of targets) {
+    try { await state.out.handle.removeEntry(n, { recursive: true }); done.push(n); }
+    catch (e) { failed.push(n); }
+  }
+  return { done, failed };
+}
+async function copyOut() {
+  if (state.copying) return;
+  const files = copyList();
+  if (!files.length) { toast('コピーする写真がありません。', 'err'); return; }
+  if (!state.out.handle) { notice('copyMsg', '手順1で、コピー先フォルダを選んでください。', 'warn'); return; }
+  try {
+    // 書き込みの許可確認(クリック直後に行う)
+    if (state.out.status !== 'ready') {
+      const p = await state.out.handle.requestPermission({ mode: 'readwrite' });
+      if (p !== 'granted') { notice('copyMsg', 'コピー先フォルダへの書き込みが許可されませんでした。', 'error'); return; }
+      state.out.status = 'ready'; renderFolders();
+    }
+    for (const f of state.photos) {
+      if (await conflicts(f.handle, state.out.handle)) {
+        notice('copyMsg', 'コピー先が写真フォルダ「' + f.label + '」の中にあるため、コピーできません。別の場所を選び直してください。', 'error'); return;
+      }
+    }
+  } catch (e) { notice('copyMsg', describeError(e), 'error'); return; }
+
+  state.copying = true; renderCopyArea();
+  const subName = folderNameFor(files);
+  let ok = 0; const fail = [];
+  try {
+    const sub = await state.out.handle.getDirectoryHandle(subName, { create: true });
+    const used = new Set();
+    for (let i = 0; i < files.length; i++) {
+      notice('copyMsg', 'コピー中… ' + (i + 1) + '/' + files.length + '件', 'info');
+      await tick();
+      const f = files[i];
+      try {
+        const file = await f.getFile();
+        const name = await uniqueInDir(sub, f.name, used);
+        const fh = await sub.getFileHandle(name, { create: true });
+        const w = await fh.createWritable();
+        try { await w.write(file); await w.close(); }
+        catch (e) { try { await w.abort(); } catch (e2) { /* 無視 */ } throw e; }
+        ok++;
+      } catch (e) { fail.push(f.name); }
+    }
+    const where = '「' + state.out.handle.name + '」フォルダの中の「' + subName + '」';
+    if (!fail.length) {
+      // 全件成功したときだけ、古いコピーフォルダを整理する
+      let extra = '', kind = 'ok';
+      try {
+        const r = await pruneOld(subName);
+        if (r.done.length) extra += '古いコピーフォルダ ' + r.done.length + '件を整理しました(' + r.done.join('、') + ')。';
+        if (r.failed.length) { extra += '整理できなかったフォルダ:' + r.failed.join('、') + '。'; kind = 'warn'; }
+      } catch (e) { extra = '古いコピーフォルダの整理はできませんでした。'; kind = 'warn'; }
+      notice('copyMsg', ok + '件の写真をコピーしました。' + where + 'をエクスプローラーで開き、Ctrl+Aで全選択して、ギガファイル便へドラッグしてください。' + extra, kind);
+    } else {
+      notice('copyMsg', ok + '件をコピーし、' + fail.length + '件は失敗しました(' + fail.join('、') + ')。' + where + 'を確認してください。', 'warn');
+    }
+  } catch (e) {
+    notice('copyMsg', 'コピーできませんでした。' + describeError(e), 'error');
+  } finally {
+    state.copying = false; renderCopyArea();
+  }
+}
+
+/* ---------- 写真フォルダの一覧をCSV出力(読み取りのみ。選択中の全フォルダが対象) ---------- */
+async function exportPhotoList() {
+  if (state.csvBusy) return;
+  const nr = notReadyMessage();
+  if (nr) { notice('csvMsg', nr, 'warn'); return; }
+  // 保存先の指定は、クリック直後(時間のかかる処理より前)に行う必要がある
+  let writable = null;
+  if (typeof window.showSaveFilePicker === 'function') {
+    try {
+      const fh = await window.showSaveFilePicker({
+        suggestedName: '写真一覧_' + ymd() + '.csv',
+        types: [{ description: 'CSVファイル', accept: { 'text/csv': ['.csv'] } }]
+      });
+      writable = await fh.createWritable();
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;   // キャンセル
+      writable = null;                            // 使えない場合はダウンロード方式にする
+    }
+  }
+  state.csvBusy = true; renderFolders();
+  notice('csvMsg', 'フォルダ内の写真を読み取っています…', 'info');
+  try {
+    const L = await getListings(false);
+    const entries = L.entries, stats = L.stats;
+    await fetchMetas(entries, { onProgress: (d, n) => { if (d % 20 === 0 || d === n) notice('csvMsg', '容量を確認中… ' + d + '/' + n + '件', 'info'); } });
+    const countBy = new Map();     // 同じ番号(拡張子を除いたファイル名)の数(全フォルダ合計)
+    for (const e of entries) countBy.set(e.base, (countBy.get(e.base) || 0) + 1);
+    const rows = [];
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i];
+      let size = '', mb = '', small = '', mtime = '';
+      if (e.size >= 0) { size = e.size; mb = (e.size / 1048576).toFixed(2); mtime = fmtDate(e.mtime); small = e.size < SMALL_BYTES ? '○' : ''; }
+      else size = '取得できません';
+      rows.push([e.root, e.base, e.name, e.ext.toUpperCase(), e.rel, size, mb, small, mtime, CODE_FORMAT.test(e.base) ? '○' : '×', countBy.get(e.base) > 1 ? '○' : '']);
+    }
+    rows.sort((a, b) => (a[1] + a[0] + a[4] + a[2]).localeCompare(b[1] + b[0] + b[4] + b[2], 'ja'));
+    const head = ['写真フォルダ', '写真番号', 'ファイル名', '拡張子', 'サブフォルダ', '容量(バイト)', '容量(MB)', '1MB未満', '更新日時', '番号の形式が正しい', '同じ番号が複数あり'];
+    // 先頭にBOMを付けてExcelでも文字化けしないようにする
+    const csv = '\uFEFF' + [head].concat(rows).map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
+    if (writable) { await writable.write(csv); await writable.close(); writable = null; }
+    else saveBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), '写真一覧_' + ymd() + '.csv');
+    let msg = '写真' + rows.length + '件の一覧をCSVに出力しました。';
+    if (stats.skippedDirs) msg += ' 読み取れなかった(または階層が深すぎる)サブフォルダが' + stats.skippedDirs + '件あります。';
+    notice('csvMsg', msg, stats.skippedDirs ? 'warn' : 'ok');
+  } catch (e) {
+    if (writable) { try { await writable.abort(); } catch (e2) { /* 無視 */ } }
+    notice('csvMsg', '一覧を出力できませんでした。' + describeFolderError(e), 'error');
+  } finally {
+    state.csvBusy = false; renderFolders();
+  }
+}
+
+/* ---------- クリップボード(未検出番号) ---------- */
+async function copyText(text, okMsg) {
+  try { await navigator.clipboard.writeText(text); toast(okMsg); }
+  catch (e) {
+    try {
+      const ta = h('textarea', { style: 'position:fixed;left:-9999px;top:0;', 'aria-hidden': 'true' });
+      ta.value = text; document.body.append(ta); ta.select();
+      const ok = document.execCommand('copy'); ta.remove();
+      toast(ok ? okMsg : 'コピーできませんでした。', ok ? '' : 'err');
+    } catch (e2) { toast('コピーできませんでした。', 'err'); }
+  }
+}
+
+/* ---------- サムネイル(画面に見えているものだけ順に読み込む) ---------- */
+const THUMB_CONCURRENCY = 5;     // 見本画像を、同時に読み込む数
+const thumbQueue = []; let thumbActive = 0;
+function enqueueThumb(job) { thumbQueue.push(job); pumpThumbs(); }
+function pumpThumbs() {
+  while (thumbActive < THUMB_CONCURRENCY && thumbQueue.length) {
+    const job = thumbQueue.shift(); thumbActive++;
+    job().catch(() => {}).finally(() => { thumbActive--; pumpThumbs(); });
+  }
+}
+function makeIO(scrollId) {
+  if (!('IntersectionObserver' in window)) return null;
+  // 画面が広いとき(一覧が枠の中でスクロールするとき)は、その枠を基準にして、枠の外の少し先まで先読みする
+  const root = (scrollId && window.matchMedia && window.matchMedia('(min-width:981px)').matches) ? $(scrollId) : null;
+  const o = new IntersectionObserver(ents => {
+    for (const en of ents) if (en.isIntersecting) { o.unobserve(en.target); if (en.target._load) en.target._load(); }
+  }, { root, rootMargin: '600px 0px' });
+  return o;
+}
+let ioR = makeIO('resultScroll');   // 検索結果用(描画のたびに作り直す)
+let ioB = makeIO('browseScroll');   // 閲覧用(描画のたびに作り直す)
+function decodeViaImage(file, w) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file); const img = new Image();
+    img.onload = () => {
+      try {
+        const s = Math.min(1, w / img.naturalWidth);
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.naturalWidth * s)); c.height = Math.max(1, Math.round(img.naturalHeight * s));
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); resolve(c);
+      } catch (e) { reject(e); } finally { URL.revokeObjectURL(url); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('decode')); };
+    img.src = url;
+  });
+}
+async function makeThumbSource(file, w) {
+  try {
+    const bmp = await createImageBitmap(file, { resizeWidth: w, resizeQuality: 'medium' });
+    const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
+    c.getContext('2d').drawImage(bmp, 0, 0); bmp.close(); return c;
+  } catch (e) { return await decodeViaImage(file, w); }
+}
+/** 小さな見本画像(JPEG)を作って覚えておく。同じ写真を開き直したり、別の場所に出したりするときは、ネットワークを読まずに済む */
+function getThumbBlob(f) {
+  const k = pathKey(f);
+  const hit = thumbCache.get(k);
+  if (hit && (f.size === undefined || f.size < 0 || hit.size === f.size) && (f.mtime === undefined || hit.mtime === f.mtime)) {
+    thumbCache.delete(k); thumbCache.set(k, hit);     // 最近使った順に並べ替える
+    return Promise.resolve(hit.blob);
+  }
+  let p = thumbInflight.get(k);
+  if (!p) {
+    p = (async () => {
+      const file = await f.getFile();
+      const src = await makeThumbSource(file, THUMB_CACHE_W);
+      const out = document.createElement('canvas'); out.width = src.width; out.height = src.height;
+      const g = out.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, out.width, out.height); g.drawImage(src, 0, 0);   // 透明な画像は白地にする
+      const blob = await new Promise((res, rej) => out.toBlob(b => b ? res(b) : rej(new Error('toBlob')), 'image/jpeg', 0.82));
+      thumbCache.set(k, { blob, size: file.size, mtime: file.lastModified });
+      while (thumbCache.size > THUMB_CACHE_MAX) thumbCache.delete(thumbCache.keys().next().value);
+      return blob;
+    })().finally(() => thumbInflight.delete(k));
+    thumbInflight.set(k, p);
+  }
+  return p;
+}
+async function thumbCanvas(f, w) {
+  const blob = await getThumbBlob(f);
+  const bmp = await createImageBitmap(blob);
+  const sc = Math.min(1, w / bmp.width);
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(bmp.width * sc)); c.height = Math.max(1, Math.round(bmp.height * sc));
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height); bmp.close();
+  return c;
+}
+async function loadThumb(f, box, status, isStale, w) {
+  if (isStale()) return;
+  status.textContent = '読み込み中…';
+  try {
+    const canvas = await thumbCanvas(f, w);
+    if (isStale()) return;
+    status.remove(); box.append(canvas);
+  } catch (e) {
+    if (isStale()) return;
+    status.textContent = '画像を読み込めません'; status.classList.add('err');
+  }
+}
+function buildThumb(f, observer, isStale, w, ctx) {
+  const status = h('div', { class: 'thumb-status', text: '読み込み待ち' });
+  const box = h('div', { class: 'thumb', title: 'クリックで拡大表示', tabindex: '0', role: 'button', 'aria-label': f.name + ' を拡大表示' }, status);
+  box.addEventListener('click', () => openPreview(f, ctx));
+  box.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openPreview(f, ctx); } });
+  box._load = () => enqueueThumb(() => loadThumb(f, box, status, isStale, w));
+  if (observer) observer.observe(box); else box._load();
+  return box;
+}
+function sizeLine(f) {
+  if (f.size == null) return h('div', { class: 'fsize', text: '容量:確認中…' });
+  if (f.size < 0) return h('div', { class: 'fsize', text: '容量:取得できません' });
+  const small = f.size < SMALL_BYTES;
+  return h('div', { class: 'fsize' + (f.largest ? ' big' : '') + (small ? ' small' : '') },
+    '容量:' + fmtSize(f.size) + (f.largest ? '(最大)' : ''),
+    small ? h('span', { class: 'badge small', text: '1MB未満' }) : null);
+}
+
+/* ---------- 描画:検索結果 ---------- */
+function buildFileRow(f, gen) {
+  const box = buildThumb(f, ioR, () => gen !== state.gen, THUMB_W, 'results');
+  const cb = h('input', { type: 'checkbox' });
+  cb.checked = state.selected.has(f.key);
+  cb.addEventListener('change', () => { if (cb.checked) state.selected.add(f.key); else state.selected.delete(f.key); renderCopyArea(); });
+  f.cb = cb;
+  const place = placeOf(f);
+  return h('div', { class: 'file-row' }, box,
+    h('div', { class: 'fnm', text: f.name }),
+    (f.sizeEl = sizeLine(f)),
+    place ? h('div', { class: 'frel', text: '場所:' + place }) : null,
+    h('label', { class: 'sel' }, cb, 'コピーする'));
+}
+function buildCard(code, files, gen) {
+  const shown = shownFiles(files);
+  const dup = shown.length < files.length;    // 同じ番号が複数あり、容量が最大のものだけを表示している
+  const anySmall = shown.some(f => f.size >= 0 && f.size < SMALL_BYTES);
+  const card = h('div', { class: 'card' + (anySmall ? ' is-small' : '') });
+  card.append(h('div', { class: 'card-head' }, h('span', { class: 'code', text: code }),
+    dup ? h('span', { class: 'badge warn', text: '最大を使用', title: '同じ番号のファイルが' + files.length + '件あり、容量が最大のものを使います' }) : null));
+  for (const f of shown) { card.append(buildFileRow(f, gen)); f.cardEl = card; }
+  return card;
+}
+function buildGroup(g, gen) {
+  const wrap = h('div', { class: 'group' });
+  wrap.append(h('div', { class: 'group-head' },
+    h('strong', { text: g.prefix + '(' + g.items.length + '件)' }),
+    h('button', { type: 'button', class: 'tonal', onclick: () => setGroupSelection(g, true) }, 'すべて選択'),
+    h('button', { type: 'button', class: 'text', onclick: () => setGroupSelection(g, false) }, 'すべて解除'),
+    h('span', { class: 'muted', text: 'チェックを入れた写真がコピーされます' })));
+  const grid = h('div', { class: 'cards small' });
+  if (!g.items.length) grid.append(h('div', { class: 'muted', text: '指定された番号以外の写真はありません。' }));
+  for (const it of g.items) grid.append(buildCard(it.code, it.files, gen));
+  wrap.append(grid);
+  return wrap;
+}
+const DOT = { ready: ['ok', '許可済み'], needs: ['warn', '許可が必要'], none: ['err', '未設定'] };
+function dotEl(status) {
+  if (status === 'ready') return null;
+  const [c, t] = DOT[status] || DOT.none;
+  return h('span', { class: 'dot ' + c, title: t, role: 'img', 'aria-label': t });
+}
+function renderFolders() {
+  // 写真フォルダ(複数):名前のチップを横に並べる
+  const box = $('photoRows'); box.replaceChildren();
+  for (const f of state.photos) {
+    const it = folderInfoText(f);
+    box.append(h('span', { class: 'fchip', title: folderInfoTitle(f) },
+      icon('folder'),
+      h('span', { class: 'fcol' },
+        h('span', { class: 'fn', text: f.label }),
+        it ? h('span', { class: 'fi', text: it }) : null),
+      dotEl(f.status),
+      f.status === 'needs' ? h('button', { type: 'button', class: 'primary xs', onclick: () => grantFolder(f, 'read') }, '許可する') : null,
+      h('button', { type: 'button', class: 'icon xs', title: 'このフォルダを外す', 'aria-label': f.label + ' を外す', onclick: () => removePhotoFolder(f) }, icon('close'))));
+  }
+  $('photoAdd').hidden = state.photos.length >= MAX_PHOTO_FOLDERS;
+  $('photoAddLabel').textContent = state.photos.length ? '追加' : '選ぶ';
+  $('photoCount').textContent = state.photos.length ? state.photos.length + ' / ' + MAX_PHOTO_FOLDERS : '';
+  // コピー先
+  const o = state.out;
+  $('outName').textContent = o.handle ? o.handle.name : '未設定';
+  $('outName').title = o.handle ? o.handle.name : '';
+  const [c, t] = DOT[o.status] || DOT.none;
+  const b = $('outBadge'); b.className = 'dot ' + c; b.title = t; b.setAttribute('aria-label', t); b.hidden = o.status === 'ready';
+  $('outGrant').hidden = o.status !== 'needs';
+  $('outPick').textContent = o.handle ? '変更' : '選ぶ';
+  $('btnCsv').disabled = state.csvBusy || !state.photos.length;
+}
+function renderExtracted() {
+  $('extractCount').textContent = '抽出:' + (state.codes.length + state.prefixes.length) + '件';
+  const box = $('chips'); box.replaceChildren();
+  for (const code of state.codes) {
+    box.append(h('span', { class: 'chip' }, code,
+      h('button', { type: 'button', class: 'icon', title: code + ' を削除', 'aria-label': code + ' を削除', onclick: () => removeCode(code) }, icon('close'))));
+  }
+  for (const p of state.prefixes) {
+    box.append(h('span', { class: 'chip prefix', title: p + ' の写真をすべて表示します' }, p + '(全件)',
+      h('button', { type: 'button', class: 'icon', title: p + ' を削除', 'aria-label': p + ' を削除', onclick: () => removePrefix(p) }, icon('close'))));
+  }
+}
+function renderResults() {
+  state.gen++; if (ioR) ioR.disconnect(); ioR = makeIO('resultScroll');
+  const list = $('cards'); list.replaceChildren();
+  const groups = $('groups'); groups.replaceChildren();
+  const head = $('resultHead');
+  if (!state.searched) {
+    head.textContent = state.searching ? '' : '写真番号を貼り付けると、ここに検索結果が表示されます。';
+    head.className = state.searching ? '' : 'muted';
+    return;
+  }
+  head.className = '';
+  const found = state.searchedCodes.filter(c => state.results.has(c));
+  head.textContent = state.searchedCodes.length
+    ? '見つかった写真:' + found.length + '件 / 未検出:' + (state.searchedCodes.length - found.length) + '件' : '';
+  const gen = state.gen;
+  for (const code of found) list.append(buildCard(code, state.results.get(code), gen));
+  for (const g of state.prefixGroups) groups.append(buildGroup(g, gen));
+}
+function renderMissing() {
+  const box = $('missingBox'); box.replaceChildren();
+  if (!state.searched || !state.searchedCodes.length) return;
+  const miss = state.searchedCodes.filter(c => !state.results.has(c));
+  if (!miss.length) { box.append(h('div', { class: 'notice ok', text: '指定された写真番号はすべて見つかりました。' })); return; }
+  box.append(h('div', { class: 'notice error' },
+    h('strong', { text: '未検出の写真番号(' + miss.length + '件)' }),
+    h('ul', { class: 'missing' }, miss.map(c => h('li', { text: c }))),
+    h('button', { type: 'button', onclick: () => copyText(miss.join('\n'), '未検出の番号 ' + miss.length + '件をコピーしました。') }, icon('copy'), '未検出番号をコピー')));
+}
+/* ---------- ④ コピーリスト(コピーする写真の一覧) ---------- */
+const listRows = new Map();      // 写真の場所 -> 一覧の行(行を使い回して、サムネイルの再読み込みを避ける)
+const ioL = makeIO('copyListBox');
+const isTempFile = f => typeof f.rootId === 'string';     // ドロップした一時フォルダの写真
+/** コピーリストから外す(検索結果のチェック・閲覧の追加の、どちらも外す) */
+function removeFromCopyList(f) {
+  const k = pathKey(f);
+  for (const x of selectedFiles()) if (pathKey(x) === k) { state.selected.delete(x.key); if (x.cb) x.cb.checked = false; }
+  for (const [key, e] of Array.from(state.extra)) if (pathKey(e) === k) { state.extra.delete(key); if (e.cb) e.cb.checked = false; }
+  renderCopyArea();
+}
+function buildListRow(f) {
+  const status = h('div', { class: 'thumb-status', text: '' });
+  const box = h('div', { class: 'lthumb', title: 'クリックで拡大表示', role: 'button', tabindex: '0' }, status);
+  const row = h('div', { class: 'lrow' },
+    box,
+    h('div', { class: 'lmid' }, h('div', { class: 'lcode' }), h('div', { class: 'lmeta' })),
+    h('button', { type: 'button', class: 'icon xs', title: 'コピーリストから外す', 'aria-label': '外す', onclick: () => removeFromCopyList(row._f) }, icon('close')));
+  row._box = box;
+  box.addEventListener('click', () => openPreview(row._f, 'list'));
+  box.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openPreview(row._f, 'list'); } });
+  box._load = () => enqueueThumb(() => loadThumb(row._f, box, status, () => !row.isConnected, 120));
+  if (ioL) ioL.observe(box); else box._load();
+  return row;
+}
+function fillListRow(row, f) {
+  const small = f.size >= 0 && f.size < SMALL_BYTES;
+  row.classList.toggle('is-small', small);
+  const lcode = row.querySelector('.lcode');
+  lcode.replaceChildren(h('span', { text: f.base }));
+  if (isTempFile(f)) lcode.append(h('span', { class: 'ltag', text: '一時' }));
+  const meta = row.querySelector('.lmeta');
+  meta.className = 'lmeta' + (small ? ' small' : '');
+  meta.textContent = (f.size >= 0 ? fmtSize(f.size) : '容量不明') + (small ? ' ・ 1MB未満' : '');
+  row.title = f.root + '/' + f.rel + f.name;      // マウスを重ねると、場所が見える
+}
+function renderCopyList() {
+  const list = copyList();
+  const box = $('copyListBox');
+  const ordered = [], keep = new Set();
+  let bytes = 0, smallN = 0;
+  for (const f of list) {
+    const k = pathKey(f);
+    keep.add(k);
+    let row = listRows.get(k);
+    if (!row) { row = buildListRow(f); listRows.set(k, row); }
+    row._f = f;
+    fillListRow(row, f);
+    ordered.push(row);
+    if (f.size >= 0) { bytes += f.size; if (f.size < SMALL_BYTES) smallN++; }
+  }
+  for (const [k, r] of Array.from(listRows)) if (!keep.has(k)) { listRows.delete(k); if (ioL) ioL.unobserve(r._box); }
+  if (ordered.length) box.replaceChildren(...ordered);
+  else box.replaceChildren(h('div', { class: 'lempty muted', text: 'まだ写真が選ばれていません。検索結果でチェックを入れるか、「フォルダ内の写真」で「コピー対象に追加」を押してください。' }));
+  $('copyCount').textContent = list.length + '件';
+  $('copyTotal').textContent = list.length ? '合計 ' + fmtBig(bytes) + (smallN ? ' ・ 1MB未満 ' + smallN + '件' : '') : '';
+}
+function renderCopyArea() {
+  const n = copyList().length;
+  $('btnCopy').disabled = state.copying || n === 0;
+  $('btnCopyLabel').textContent = state.copying ? 'コピー中…' : 'フォルダへコピー' + (n ? '(' + n + '件)' : '');
+  const parts = [];
+  if (state.extra.size) parts.push('検索結果 ' + selectedFiles().length + '件 + 閲覧で追加 ' + state.extra.size + '件');
+  if (state.out.status !== 'ready') parts.push(state.out.handle ? 'コピー先の許可が必要です(ボタンを押すと許可の確認が出ます)' : 'コピー先フォルダが未設定です');
+  $('selInfo').textContent = parts.join(' / ');
+  $('btnClearExtra').hidden = state.extra.size === 0;
+  $('btnClearExtra').disabled = state.copying;
+  renderCopyList();
+}
+function renderAll() { renderFolders(); renderExtracted(); renderResults(); renderMissing(); renderCopyArea(); }
+
+/* ---------- フォルダ内の写真の閲覧(登録した写真フォルダ / ドロップした一時フォルダ 共通) ---------- */
+// state.browse:登録した写真フォルダの閲覧。state.temps[i].ctx:ドロップした一時フォルダの閲覧(それぞれ別の状態)
+function tempOfTab(tab) { return tab.startsWith('temp:') ? (state.temps.find(t => t.id === tab.slice(5)) || null) : null; }
+const activeTemp = () => tempOfTab(state.tab);
+const activeCtx = () => { const t = activeTemp(); return t ? t.ctx : state.browse; };
+const tempOfCtx = ctx => state.temps.find(t => t.ctx === ctx) || null;
+function setBrowseMsg(ctx, text, kind) {
+  ctx.msg = text || ''; ctx.msgKind = kind || 'info';
+  if (state.tab !== 'results' && activeCtx() === ctx) notice('browseMsg', ctx.msg, ctx.msgKind);
+}
+function resetBrowse() {
+  const b = state.browse;
+  b.run++; b.entries = []; b.loaded = false; b.loading = false; b.path = ''; b.view = []; b.msg = ''; b.msgKind = 'info';
+  if (state.tab === 'browse') {
+    $('browseCards').replaceChildren(); $('browsePath').replaceChildren(); $('browseInfo').textContent = '';
+    notice('browseMsg', '', 'info');
+  }
+}
+async function loadCtx(ctx, force) {
+  const t = tempOfCtx(ctx);     // 一時フォルダなら t、登録した写真フォルダなら null
+  if (ctx.loading) return;
+  if (!t) {
+    const nr = notReadyMessage();
+    if (nr) { setBrowseMsg(ctx, nr, 'warn'); return; }
+  }
+  if (ctx.loaded && !force) { renderBrowse(); return; }
+  const runId = ++ctx.run;
+  ctx.loading = true; ctx.loaded = false; ctx.entries = [];
+  if (state.tab !== 'results' && activeCtx() === ctx) $('browseCards').replaceChildren();
+  setBrowseMsg(ctx, 'フォルダ内の写真を読み取っています…', 'info');
+  try {
+    let entries, stats, listedAt;
+    if (t) { const l = await getListing(t, force); entries = cloneEntries(l.entries, t); entries.forEach(applyMeta); stats = l.stats; listedAt = l.ts; }
+    else { const L = await getListings(force); entries = L.entries; stats = L.stats; listedAt = L.oldest; }
+    if (runId !== ctx.run) return;
+    // 閲覧でたどる場所(登録した写真フォルダが複数のときは、フォルダ名から)
+    for (const e of entries) e.vrel = (!t && multi() ? e.root + '/' : '') + e.rel;
+    entries.sort((x, y) => (x.base + x.vrel + x.name).localeCompare(y.base + y.vrel + y.name, 'ja'));
+    ctx.entries = entries; ctx.loaded = true; ctx.loading = false;
+    if (ctx.path && !entries.some(e => e.vrel.startsWith(ctx.path))) ctx.path = '';   // 開いていたフォルダが無くなっていたら先頭に戻す
+    let msg = entries.length + '件の写真を読み込みました(' + hhmm(listedAt) + ' 時点)。';
+    let kind = 'ok';
+    if (!entries.length) { msg = stats.total ? '対象の画像(jpg/jpeg/png/webp)がフォルダにありません。' : 'フォルダにファイルがありません。'; kind = 'warn'; }
+    if (stats.skippedDirs) { msg += ' 読み取れなかった(または階層が深すぎる)サブフォルダが' + stats.skippedDirs + '件あります。'; kind = 'warn'; }
+    setBrowseMsg(ctx, msg, kind);
+    const shown = () => state.tab !== 'results' && activeCtx() === ctx;
+    if (shown()) renderBrowse();               // 一覧は、容量を待たずに先に表示する
+    // 容量は、複数同時に裏で調べる(分かった分は覚えておく)
+    if (entries.some(e => e.size === undefined)) {
+      await fetchMetas(entries, { onEach: patchSize, onProgress: (d, n) => { if (d % 20 === 0 || d === n) setBrowseMsg(ctx, msg + ' 容量を確認中… ' + d + '/' + n + '件', 'info'); }, isStale: () => runId !== ctx.run });
+      if (runId !== ctx.run) return;
+      setBrowseMsg(ctx, msg, kind);
+      if (shown()) { if ($('browseSmall').checked) keepScroll('browseScroll', renderBrowse); else patchFolderCards(); }
+    }
+  } catch (e) {
+    if (runId !== ctx.run) return;
+    ctx.loading = false;
+    setBrowseMsg(ctx, describeFolderError(e), 'error');
+  } finally {
+    if (runId === ctx.run) ctx.loading = false;
+  }
+}
+function buildBrowseCard(e, gen, showPlace) {
+  const box = buildThumb(e, ioB, () => gen !== state.genB, THUMB_W_BROWSE, 'browse');
+  const cb = h('input', { type: 'checkbox' });
+  cb.checked = state.extra.has(e.key);
+  cb.addEventListener('change', () => {
+    if (cb.checked) state.extra.set(e.key, e); else state.extra.delete(e.key);
+    renderCopyArea();
+  });
+  e.cb = cb;
+  const small = e.size >= 0 && e.size < SMALL_BYTES;
+  const card = h('div', { class: 'card' + (small ? ' is-small' : '') },
+    h('div', { class: 'card-head' }, h('span', { class: 'code', text: e.base })),
+    box,
+    h('div', { class: 'fnm', text: e.name }),
+    (e.sizeEl = sizeLine(e)),
+    showPlace && e.vrel ? h('div', { class: 'frel', text: '場所:' + e.vrel }) : null,
+    h('label', { class: 'sel' }, cb, 'コピーに追加'));
+  e.cardEl = card;
+  return card;
+}
+function openBrowsePath(p) { activeCtx().path = p; renderBrowse(); $('browseScroll').scrollTop = 0; }
+function buildFolderCard(f, path) {
+  return h('button', { type: 'button', class: 'foldercard', 'data-name': f.name, title: f.name + ' を開く', onclick: () => openBrowsePath(path + f.name + '/') },
+    icon('folder'),
+    h('span', { class: 'fname2', text: f.name }),
+    h('span', { class: 'muted', text: '写真 ' + f.n + '件' + (f.dirs ? ' ・ サブフォルダ' + f.dirs : '') }),
+    h('span', { class: 'muted fbytes', text: fmtBig(f.bytes) }));
+}
+/** 「写真フォルダ › sub › inner」のような現在位置の表示(クリックで戻れる) */
+function buildCrumbs(path) {
+  const wrap = h('div', { class: 'row' });
+  const segs = path ? path.split('/').filter(Boolean) : [];
+  const pathOf = n => segs.slice(0, n).map(x => x + '/').join('');
+  if (segs.length) wrap.append(h('button', { type: 'button', class: 'text', onclick: () => openBrowsePath(pathOf(segs.length - 1)) }, icon('back'), '上へ'));
+  const t = activeTemp();
+  const rootLabel = t ? t.label : (multi() ? 'すべての写真フォルダ' : (state.photos[0] ? state.photos[0].label : '写真フォルダ'));
+  const items = [[0, rootLabel]].concat(segs.map((s, i) => [i + 1, s]));
+  items.forEach(([n, label], i) => {
+    if (i) wrap.append(h('span', { class: 'muted', text: '›' }));
+    if (i === items.length - 1) wrap.append(h('strong', { text: label }));
+    else wrap.append(h('button', { type: 'button', class: 'crumb', onclick: () => openBrowsePath(pathOf(n)) }, label));
+  });
+  return wrap;
+}
+/** いま開いている場所(path)にある写真と、サブフォルダ(枚数・サブフォルダ数・容量つき)を集計する */
+function levelOf(entries, path) {
+  const counts = new Map(), photos = [];
+  for (const e of entries) {
+    if (e.vrel === path) photos.push(e);
+    else if (e.vrel.startsWith(path)) {
+      const segs = e.vrel.slice(path.length).split('/').filter(Boolean);
+      const name = segs[0];
+      let c = counts.get(name);
+      if (!c) { c = { n: 0, bytes: 0, dirs: new Set() }; counts.set(name, c); }
+      c.n++;
+      if (e.size > 0) c.bytes += e.size;
+      for (let k = 2; k <= segs.length; k++) c.dirs.add(segs.slice(0, k).join('/'));    // この中のサブフォルダ(写真があるもの)
+    }
+  }
+  const folders = Array.from(counts, ([name, c]) => ({ name, n: c.n, bytes: c.bytes, dirs: c.dirs.size })).sort((x, y) => x.name.localeCompare(y.name, 'ja'));
+  return { photos, folders };
+}
+/** フォルダのカードの合計容量だけを更新する(一覧は作り直さない) */
+function patchFolderCards() {
+  if (state.tab === 'results') return;
+  const ctx = activeCtx();
+  if (!ctx.loaded) return;
+  const lv = levelOf(ctx.entries, ctx.path);
+  const by = new Map(lv.folders.map(f => [f.name, f]));
+  for (const btn of $('browseCards').querySelectorAll('button.foldercard')) {
+    const f = by.get(btn.dataset.name);
+    const sp = btn.querySelector('.fbytes');
+    if (f && sp) sp.textContent = fmtBig(f.bytes);
+  }
+}
+function renderBrowse() {
+  state.genB++; if (ioB) ioB.disconnect(); ioB = makeIO('browseScroll');
+  const box = $('browseCards'); box.replaceChildren();
+  const crumbs = $('browsePath'); crumbs.replaceChildren();
+  if (state.tab === 'results') return;
+  const ctx = activeCtx();
+  if (!ctx.loaded) { $('browseInfo').textContent = ''; return; }
+  const q = $('browseQ').value.trim().toLowerCase();
+  const onlySmall = $('browseSmall').checked;
+  const filtering = !!q || onlySmall;
+  const gen = state.genB;
+  let photos, folders = [];
+  if (filtering) {
+    // 絞り込み中は、全フォルダを横断して表示する
+    photos = ctx.entries.filter(e =>
+      (!q || e.base.toLowerCase().includes(q) || e.name.toLowerCase().includes(q) || e.vrel.toLowerCase().includes(q)) &&
+      (!onlySmall || (e.size >= 0 && e.size < SMALL_BYTES)));
+    $('browseInfo').textContent = '絞り込み中: ' + photos.length + '件 / 全 ' + ctx.entries.length + '件';
+  } else {
+    // 絞り込みなし:いま開いているフォルダの中のサブフォルダと写真を表示する
+    const path = ctx.path;
+    const lv = levelOf(ctx.entries, path);
+    photos = lv.photos; folders = lv.folders;
+    crumbs.append(buildCrumbs(path));
+    $('browseInfo').textContent = 'このフォルダ: 写真' + photos.length + '件' + (folders.length ? ' / フォルダ' + folders.length + '件' : '') + ' / 全体 ' + ctx.entries.length + '件';
+  }
+  const shown = photos.slice(0, BROWSE_MAX);
+  ctx.view = shown;     // 拡大表示の前後切り替えに使う(いま画面に出ている写真)
+  for (const f of folders) box.append(buildFolderCard(f, ctx.path));
+  for (const e of shown) box.append(buildBrowseCard(e, gen, filtering));
+  if (!folders.length && !photos.length) box.append(h('div', { class: 'muted', text: '該当する写真がありません。' }));
+  if (photos.length > shown.length) box.append(h('div', { class: 'notice warn', style: 'grid-column:1/-1;', text: '件数が多いため、先頭の' + BROWSE_MAX + '件のみ表示しています。絞り込んでください。' }));
+}
+
+/* ---------- タブ(検索結果 / フォルダ内の写真 / 一時タブ) ---------- */
+function renderTabs() {
+  const box = $('tempTabs'); box.replaceChildren();
+  for (const t of state.temps) {
+    const on = state.tab === 'temp:' + t.id;
+    box.append(h('div', { class: 'tab temp' + (on ? ' active' : ''), role: 'tab', 'aria-selected': on ? 'true' : 'false' },
+      h('button', { type: 'button', class: 'tlabel', title: t.label + '(一時的に開いたフォルダ)', onclick: () => showTab('temp:' + t.id) },
+        icon('folder'), h('span', { class: 'tn', text: t.label }), h('span', { class: 'tbadge', text: '一時' })),
+      h('button', { type: 'button', class: 'tclose', title: 'この一時タブを閉じる', 'aria-label': t.label + ' の一時タブを閉じる', onclick: () => closeTemp(t) }, icon('close'))));
+  }
+  $('tabResults').classList.toggle('active', state.tab === 'results');
+  $('tabBrowse').classList.toggle('active', state.tab === 'browse');
+  // 開いているタブが、タブの列からはみ出しているときは、見える位置まで動かす
+  const bar = $('tabs'), cur = bar.querySelector('.tab.active');
+  if (cur) {
+    if (cur.offsetLeft < bar.scrollLeft) bar.scrollLeft = cur.offsetLeft - 8;
+    else if (cur.offsetLeft + cur.offsetWidth > bar.scrollLeft + bar.clientWidth) bar.scrollLeft = cur.offsetLeft + cur.offsetWidth - bar.clientWidth + 8;
+  }
+}
+function showTab(name) {
+  if (name.startsWith('temp:') && !tempOfTab(name)) name = 'results';
+  state.tab = name;
+  const isResults = name === 'results';
+  const t = tempOfTab(name);
+  $('viewResults').hidden = !isResults;
+  $('viewBrowse').hidden = isResults;
+  $('tempBanner').hidden = !t;
+  $('btnCsv').hidden = !!t;       // CSV出力は、登録した写真フォルダの一覧だけ
+  $('csvMsg').hidden = !!t;
+  $('panelCenter').classList.toggle('tempmode', !!t);
+  renderTabs();
+  if (isResults) return;
+  const ctx = activeCtx();
+  $('browseQ').value = ctx.q; $('browseSmall').checked = ctx.small;
+  notice('browseMsg', ctx.msg, ctx.msgKind);
+  renderBrowse();               // 読み込み済みなら表示、未読み込みなら空にする
+  loadCtx(ctx, false);
+}
+
+/* ---------- ドラッグ&ドロップで一時的にフォルダを開く ---------- */
+async function addTempFolder(hd) {
+  // 登録済みの写真フォルダと同じなら、そちらの閲覧タブへ
+  for (const f of state.photos) {
+    if (await hd.isSameEntry(f.handle).catch(() => false)) { toast('「' + f.label + '」は登録済みの写真フォルダです。「フォルダ内の写真」で見られます。'); showTab('browse'); return; }
+  }
+  for (const t of state.temps) {
+    if (await hd.isSameEntry(t.handle).catch(() => false)) { toast('「' + t.label + '」は、すでに一時タブで開いています。'); showTab('temp:' + t.id); return; }
+  }
+  if (state.temps.length >= MAX_TEMP) { toast('一時タブは最大' + MAX_TEMP + 'つまでです。不要なタブを閉じてから、ドロップしてください。', 'err'); return; }
+  try {
+    let p = await hd.queryPermission({ mode: 'read' });
+    if (p !== 'granted') p = await hd.requestPermission({ mode: 'read' });
+    if (p !== 'granted') { toast('フォルダの読み取りが許可されませんでした。', 'err'); return; }
+  } catch (e) { toast(describeError(e), 'err'); return; }
+  let label = hd.name, n = 1;
+  while (state.temps.some(t => t.label === label)) label = hd.name + ' (' + (++n) + ')';
+  const t = { id: 't' + (++tempSeq), handle: hd, label, ctx: newCtx() };
+  state.temps.push(t);
+  showTab('temp:' + t.id);       // 新しい一時タブを開いて、読み込みを始める
+}
+function closeTemp(t) {
+  const added = Array.from(state.extra.values()).filter(e => e.rootId === t.id);
+  if (added.length && !confirm('「' + t.label + '」から追加した写真' + added.length + '件も、コピーリストから外れます。閉じますか?')) return;
+  for (const e of added) state.extra.delete(e.key);
+  t.ctx.run++;                    // 読み込み中なら中断する
+  const wasActive = state.tab === 'temp:' + t.id;
+  state.temps = state.temps.filter(x => x !== t);
+  if (wasActive) showTab('results'); else renderTabs();
+  renderCopyArea();
+}
+async function onDropFolders(ev) {
+  // getAsFileSystemHandle は、イベントの処理中(最初の await より前)に呼ぶ必要がある
+  const items = Array.from(ev.dataTransfer ? ev.dataTransfer.items : []);
+  if (!items.length || typeof items[0].getAsFileSystemHandle !== 'function') {
+    toast('このブラウザでは、フォルダのドロップに対応していません。', 'err');
+    return;
+  }
+  const promises = items.map(i => i.kind === 'file' ? i.getAsFileSystemHandle().catch(() => null) : Promise.resolve(null));
+  const handles = await Promise.all(promises);
+  const dirs = handles.filter(x => x && x.kind === 'directory');
+  const others = handles.filter(x => x && x.kind === 'file').length;
+  if (!dirs.length) { toast('フォルダをドロップしてください(ファイルではなく、フォルダが必要です)。', 'err'); return; }
+  for (const hd of dirs) await addTempFolder(hd);
+  if (others) toast('フォルダ以外のファイルは無視しました。');
+}
+function initDrop() {
+  let depth = 0;
+  const hasFiles = ev => !!(ev.dataTransfer && Array.from(ev.dataTransfer.types || []).includes('Files'));
+  const hide = () => { depth = 0; $('dropOverlay').hidden = true; };
+  document.addEventListener('dragenter', ev => { if (!hasFiles(ev)) return; ev.preventDefault(); depth++; $('dropOverlay').hidden = false; });
+  document.addEventListener('dragover', ev => { if (!hasFiles(ev)) return; ev.preventDefault(); ev.dataTransfer.dropEffect = 'copy'; });
+  document.addEventListener('dragleave', ev => { if (!hasFiles(ev)) return; depth = Math.max(0, depth - 1); if (!depth) $('dropOverlay').hidden = true; });
+  document.addEventListener('drop', ev => {
+    if (!hasFiles(ev)) return;     // 本文欄への文字のドロップは、そのまま受け付ける
+    ev.preventDefault(); hide();
+    onDropFolders(ev);
+  });
+  window.addEventListener('blur', hide);
+}
+
+/* ---------- プレビュー(拡大表示。← → キーやマウスホイールで前後の写真へ切り替え) ---------- */
+let previewToken = 0;
+let previewNav = { list: [], i: 0, dir: 1 };
+// 先読み用の保管庫。key -> { url, img, promise }。いま表示中・次に見る写真(進む向き)・直前に見た写真だけを持ち、残りはすぐ解放する
+const previewCache = new Map();
+function loadPreviewImage(f) {
+  const hit = previewCache.get(f.key);
+  if (hit) return hit.promise;
+  const c = { url: null, img: null, promise: null };
+  c.promise = (async () => {
+    const file = await f.getFile();
+    const url = URL.createObjectURL(file);
+    c.url = url;
+    const img = new Image();
+    img.alt = f.name;
+    img.src = url;
+    await (img.decode ? img.decode() : new Promise((res, rej) => { img.onload = res; img.onerror = rej; }));
+    if (previewCache.get(f.key) !== c) { URL.revokeObjectURL(url); c.url = null; throw new Error('evicted'); }   // 読み込み中に不要になった
+    c.img = img;
+    return img;
+  })();
+  c.promise.catch(() => {
+    if (c.url) { URL.revokeObjectURL(c.url); c.url = null; }
+    if (previewCache.get(f.key) === c) previewCache.delete(f.key);
+  });
+  previewCache.set(f.key, c);
+  return c.promise;
+}
+/** keepKeys に含まれない写真の保管分を解放する */
+function trimPreviewCache(keepKeys) {
+  for (const [k, c] of Array.from(previewCache)) {
+    if (keepKeys.has(k)) continue;
+    previewCache.delete(k);
+    if (c.url) { URL.revokeObjectURL(c.url); c.url = null; }
+  }
+}
+/** 切り替えの対象にする写真の並び:検索結果なら画面に出ている順、閲覧なら今開いているフォルダ(または絞り込み結果)の順 */
+function previewList(ctx) {
+  if (ctx === 'browse') return activeCtx().view || [];
+  if (ctx === 'list') return copyList();
+  const out = [];
+  for (const code of state.searchedCodes) { const fs = state.results.get(code); if (fs) out.push(...shownFiles(fs)); }
+  for (const g of state.prefixGroups) for (const it of g.items) out.push(...shownFiles(it.files));
+  return out;
+}
+function openPreview(f, ctx) {
+  let list = previewList(ctx);
+  let i = list.findIndex(x => x.key === f.key);
+  if (i < 0) { list = [f]; i = 0; }
+  previewNav = { list, i, dir: 1 };
+  $('modal').hidden = false;
+  $('btnModalClose').focus();
+  showPreview();
+}
+async function showPreview() {
+  const { list, i, dir } = previewNav;
+  const f = list[i];
+  const body = $('modalBody'); const token = ++previewToken;
+  const small = f.size >= 0 && f.size < SMALL_BYTES;
+  $('modalTitle').textContent = f.base + ' / ' + f.name + (f.size >= 0 ? '(' + fmtSize(f.size) + (small ? '・1MB未満' : '') + ')' : '');
+  $('modalPos').textContent = (i + 1) + ' / ' + list.length;
+  $('btnPrev').disabled = i <= 0;
+  $('btnNext').disabled = i >= list.length - 1;
+  // 切り替え中は、いま表示している写真を残したまま、次の写真の準備ができてから差し替える(ちらつき防止)
+  if (!body.querySelector('img')) body.replaceChildren(h('div', { class: 'modal-msg', text: '読み込み中…' }));
+  try {
+    const img = await loadPreviewImage(f);
+    if (token !== previewToken) return;
+    body.replaceChildren(img);
+    // 次に見る写真(進んでいる向きの1枚)を先読みしておく。直前に見た写真は保管分があれば残す
+    const next = list[i + dir];
+    const prev = list[i - dir];
+    const keep = new Set([f.key]);
+    if (next) keep.add(next.key);
+    if (prev && previewCache.has(prev.key)) keep.add(prev.key);
+    trimPreviewCache(keep);
+    if (next) loadPreviewImage(next).catch(() => {});
+  } catch (e) {
+    if (token !== previewToken) return;
+    const broken = !e || !e.name || e.name === 'EncodingError';
+    body.replaceChildren(h('div', { class: 'modal-msg err', text: broken ? '画像を読み込めませんでした。ファイルが壊れている可能性があります。' : describeError(e) }));
+  }
+}
+function stepPreview(d) {
+  const n = previewNav.i + d;
+  if (n < 0 || n >= previewNav.list.length) return;   // 端では止める
+  previewNav.i = n;
+  previewNav.dir = d;
+  showPreview();
+}
+function closePreview() {
+  previewToken++;
+  $('modal').hidden = true;
+  $('modalBody').replaceChildren();
+  trimPreviewCache(new Set());     // 保管していた画像をすべて解放
+  previewNav = { list: [], i: 0, dir: 1 };
+}
+
+/* ---------- 初期化 ---------- */
+async function init() {
+  $('photoAdd').addEventListener('click', addPhotoFolder);
+  $('outPick').addEventListener('click', pickOutFolder);
+  $('outGrant').addEventListener('click', () => grantFolder(state.out, 'readwrite'));
+  $('btnClear').addEventListener('click', clearAll);
+  $('btnCopy').addEventListener('click', copyOut);
+  $('btnCsv').addEventListener('click', exportPhotoList);
+  $('btnClearExtra').addEventListener('click', () => { for (const e of state.extra.values()) if (e.cb) e.cb.checked = false; state.extra.clear(); renderCopyArea(); });
+  $('tabResults').addEventListener('click', () => showTab('results'));
+  $('tabBrowse').addEventListener('click', () => showTab('browse'));
+  $('browseReload').addEventListener('click', () => { clearCaches(); if (activeTemp()) loadCtx(activeCtx(), true); else { loadCtx(state.browse, true); rescanAll(); } });
+  let browseTimer = null;
+  $('browseQ').addEventListener('input', () => { activeCtx().q = $('browseQ').value; clearTimeout(browseTimer); browseTimer = setTimeout(renderBrowse, 250); });
+  $('browseSmall').addEventListener('change', () => { activeCtx().small = $('browseSmall').checked; renderBrowse(); });
+  $('btnModalClose').addEventListener('click', closePreview);
+  $('btnPrev').addEventListener('click', () => stepPreview(-1));
+  $('btnNext').addEventListener('click', () => stepPreview(1));
+  $('modal').addEventListener('click', ev => { if (ev.target === $('modal')) closePreview(); });
+  document.addEventListener('keydown', ev => {
+    if ($('modal').hidden) return;
+    if (ev.key === 'Escape') closePreview();
+    else if (ev.key === 'ArrowRight') { ev.preventDefault(); stepPreview(1); }
+    else if (ev.key === 'ArrowLeft') { ev.preventDefault(); stepPreview(-1); }
+  });
+  // マウスホイール:下へ回すと次の写真、上へ回すと前の写真(回しすぎ防止のため少し間隔を空ける)
+  let lastWheel = 0;
+  $('modal').addEventListener('wheel', ev => {
+    ev.preventDefault();
+    const now = Date.now();
+    if (now - lastWheel < 180) return;
+    const dlt = ev.deltaY !== 0 ? ev.deltaY : ev.deltaX;
+    if (!dlt) return;
+    lastWheel = now;
+    stepPreview(dlt > 0 ? 1 : -1);
+  }, { passive: false });
+
+  // 貼り付けた瞬間に自動で抽出・検索。入力・編集時は少し待ってから実行
+  $('mailBody').addEventListener('paste', () => { clearTimeout(inputTimer); setTimeout(extractAndSearch, 0); });
+  $('mailBody').addEventListener('input', () => { clearTimeout(inputTimer); inputTimer = setTimeout(extractAndSearch, 700); });
+
+  // フォルダのドラッグ&ドロップ(ドロップ中の案内表示と、一時タブの作成)。画像をドロップしてもブラウザが開かないようにもする
+  initDrop();
+  window.addEventListener('unhandledrejection', ev => { ev.preventDefault(); toast('予期しないエラーが発生しました。', 'err'); });
+
+  if (typeof window.showDirectoryPicker !== 'function') {
+    notice('folderMsg', 'このブラウザではフォルダを選択できません。Microsoft Edge(通常モード)で開いてください。', 'error');
+  } else {
+    await restoreFolders();
+  }
+  renderAll();
+  renderTabs();
+  scanPending();
+}
+init();
+
+})();
+</script>
+</body>
+</html>
