@@ -33,6 +33,7 @@
   header.appbar { display:flex; align-items:center; gap:12px; height:48px; padding:0 20px; background:var(--surface); box-shadow:var(--e1); position:relative; z-index:2; }
   header.appbar .logo { width:26px; height:26px; color:var(--primary); }
   header.appbar h1 { margin:0; font-size:1.2rem; font-weight:600; letter-spacing:.02em; }
+  header.appbar .ver { font-size:.72rem; color:var(--sub); background:var(--surface-2); padding:1px 9px; border-radius:10px; margin-top:3px; user-select:none; }
 
   /* ===== 3列:左(① フォルダ・② メール本文)/ 中央(③ 写真を確認)/ 右(④ コピーリスト) ===== */
   main { padding:12px 16px 16px; }
@@ -220,9 +221,16 @@
   .modal-head { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 12px 10px 24px; }
   .modal-head strong { font-weight:600; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .mact { display:flex; align-items:center; gap:2px; flex:none; }
-  #modalBody { background:#171a20; display:flex; justify-content:center; align-items:center; height:min(74vh,880px); overflow:hidden; }
+  #modalBody { position:relative; background:#171a20; display:flex; justify-content:center; align-items:center; height:min(74vh,880px); overflow:hidden; }
   #modalBody img { max-width:100%; max-height:100%; object-fit:contain; display:block; }
   .modal-msg { padding:30px; color:#c7ccd6; }
+  #modalBody img { transition:opacity .15s; }
+  #modalBody.loading img { opacity:.3; }     /* 次の写真を読み込んでいる間は、いまの写真を薄くして「まだ切り替わっていない」と分かるようにする */
+  .mload { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; color:#fff; background:rgba(23,26,32,.35); text-align:center; padding:20px; }
+  .mload .spin { width:38px; height:38px; border:4px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:mspin .9s linear infinite; }
+  .mload .mt { font-weight:700; font-size:1.05rem; }
+  .mload .ms { font-size:.8rem; opacity:.8; max-width:80%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  @keyframes mspin { to { transform:rotate(360deg); } }
   .modal-msg.err { color:#ffb4ab; font-weight:600; }
   .modal-hint { padding:8px 24px 12px; font-size:.8rem; color:var(--sub); }
   #toast { position:fixed; left:50%; bottom:28px; transform:translateX(-50%); background:#2f3135; color:#f1f3f7; padding:12px 22px; border-radius:8px; box-shadow:var(--e3); z-index:60; max-width:90vw; }
@@ -253,6 +261,7 @@
 <header class="appbar">
   <svg class="ic logo"><use href="#i-photo"/></svg>
   <h1>Gomi photo</h1>
+  <span class="ver" id="appVer"></span>
 </header>
 <main>
 <div class="layout3">
@@ -381,6 +390,12 @@
  * ========================================================= */
 (() => {
 
+/* バージョン(更新するたびに上げる。画面のタイトルの右に表示される)
+ *  1.1  2026-11-06  バージョン表示を追加 / 拡大表示の切り替えで「読み込み中」を表示
+ *  1.0  2026-11-06  ここまでの機能(案Aの3列・一時タブ・複数フォルダ・速度改善・長い名前の省略)を、1.0とする
+ */
+const APP_VERSION = '1.1';
+const APP_VERSION_DATE = '2026-11-06';
 const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'webp']);
 const MAX_DEPTH = 20;
 const MAX_PHOTO_FOLDERS = 5;       // 同時に選べる写真フォルダの数
@@ -1836,10 +1851,23 @@ async function showPreview() {
   $('btnPrev').disabled = i <= 0;
   $('btnNext').disabled = i >= list.length - 1;
   // 切り替え中は、いま表示している写真を残したまま、次の写真の準備ができてから差し替える(ちらつき防止)
-  if (!body.querySelector('img')) body.replaceChildren(h('div', { class: 'modal-msg', text: '読み込み中…' }));
+  // ただし、すぐに出ないとき(ネットワーク上のフォルダなど)は、「読み込み中」を表示する。すぐ読めた場合は出さない
+  body.querySelectorAll('.mload').forEach(x => x.remove());
+  body.classList.remove('loading');
+  if (!body.querySelector('img')) body.replaceChildren();
+  const cached = previewCache.get(f.key);
+  const showLoading = () => {
+    if (token !== previewToken) return;
+    body.classList.add('loading');
+    body.append(h('div', { class: 'mload', role: 'status' }, h('span', { class: 'spin' }), h('span', { class: 'mt', text: '読み込み中…' }), h('span', { class: 'ms', text: f.name })));
+  };
+  let timer = null;
+  if (!(cached && cached.img)) { if (body.querySelector('img')) timer = setTimeout(showLoading, 200); else showLoading(); }
   try {
     const img = await loadPreviewImage(f);
+    clearTimeout(timer);
     if (token !== previewToken) return;
+    body.classList.remove('loading');
     body.replaceChildren(img);
     // 次に見る写真(進んでいる向きの1枚)を先読みしておく。直前に見た写真は保管分があれば残す
     const next = list[i + dir];
@@ -1850,7 +1878,9 @@ async function showPreview() {
     trimPreviewCache(keep);
     if (next) loadPreviewImage(next).catch(() => {});
   } catch (e) {
+    clearTimeout(timer);
     if (token !== previewToken) return;
+    body.classList.remove('loading');
     const broken = !e || !e.name || e.name === 'EncodingError';
     body.replaceChildren(h('div', { class: 'modal-msg err', text: broken ? '画像を読み込めませんでした。ファイルが壊れている可能性があります。' : describeError(e) }));
   }
@@ -1864,6 +1894,7 @@ function stepPreview(d) {
 }
 function closePreview() {
   previewToken++;
+  $('modalBody').classList.remove('loading');
   $('modal').hidden = true;
   $('modalBody').replaceChildren();
   trimPreviewCache(new Set());     // 保管していた画像をすべて解放
@@ -1872,6 +1903,8 @@ function closePreview() {
 
 /* ---------- 初期化 ---------- */
 async function init() {
+  $('appVer').textContent = 'v' + APP_VERSION;
+  $('appVer').title = 'Gomi photo v' + APP_VERSION + '(' + APP_VERSION_DATE + ' 更新)';
   $('photoAdd').addEventListener('click', addPhotoFolder);
   $('outPick').addEventListener('click', pickOutFolder);
   $('outGrant').addEventListener('click', () => grantFolder(state.out, 'readwrite'));
